@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, e.g. v0.1.0 (must match mygo.json)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go tool mygo vet .
+
+      - name: Test
+        run: go test ./...
+
+      # A release whose version does not match its tag is worse than no
+      # release: the installer a user downloads would disagree with the
+      # name of the thing they downloaded it from.
+      - name: Check the tag against the version
+        shell: pwsh
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          $version = (Get-Content mygo.json | ConvertFrom-Json).version
+          $tag = $env:TAG
+          if ($tag -ne "v$version") {
+            throw "tag $tag does not match the version $version in mygo.json (expected v$version)"
+          }
+          Write-Output "tag $tag matches mygo.json"
+
+      - name: Build
+        run: go tool mygo build -platform "windows/amd64,windows/arm64"
+
+      # Both architectures produce a file called Sweep.exe and one called
+      # "Sweep Setup <version> <arch>.exe", so the executables are renamed
+      # per architecture before they are published; a release cannot hold
+      # two assets with the same name.
+      - name: Collect the release assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content mygo.json | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($arch in "amd64", "arm64") {
+            $dir = "build/windows-$arch"
+            Copy-Item "$dir/Sweep Setup $version $arch.exe" "dist/Sweep-$version-windows-$arch-setup.exe"
+            Copy-Item "$dir/Sweep.exe" "dist/Sweep-$version-windows-$arch.exe"
+          }
+          Get-ChildItem dist | Select-Object Name, Length | Format-Table
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem dist | ForEach-Object { $_.FullName }
+          gh release create $env:TAG `
+            --repo "${{ github.repository }}" `
+            --title $env:TAG `
+            --generate-notes `
+            $assets

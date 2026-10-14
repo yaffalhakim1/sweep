@@ -1,0 +1,44 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          $unformatted = gofmt -l .
+          if ($unformatted) {
+            Write-Output "gofmt found unformatted files:`n$unformatted"
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Vet
+        run: go tool mygo vet .
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go tool mygo build -platform "windows/amd64,windows/arm64"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sweep-windows
+          path: build/*/*.exe
+          if-no-files-found: error
