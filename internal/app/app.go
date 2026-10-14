@@ -66,6 +66,12 @@ type App struct {
 	// roots is where to scan. Empty means the user's home, which the app
 	// resolves at scan time rather than storing a machine-specific path.
 	roots []string
+	// volumes is the mounted filesystems, read once at startup and kept so
+	// the picker does not hit the filesystem on every frame.
+	volumes []disk.Volume
+	// rootName is what the window calls the place being scanned, computed
+	// when the roots change rather than per frame.
+	rootName string
 
 	// scanning is true while a walk is in flight, so the view can say so;
 	// visited counts the directories read so far.
@@ -159,7 +165,10 @@ func (a *App) View(c *ui.Context) { a.viewFn(c) }
 
 // Start scans once, and reports the volume the scan is looking at.
 func (a *App) Start() {
-	a.refreshVolume()
+	// The volumes are read once, so the picker can name them without a
+	// filesystem call per frame.
+	a.LoadVolumes()
+	a.updateRoot()
 	a.StartScan()
 }
 
@@ -259,7 +268,7 @@ func (a *App) Scan() {
 		a.foundSoFar = 0
 		a.pruneSelection()
 		a.refresh()
-		a.refreshVolume()
+		a.updateRoot()
 		if len(found) == 0 && a.lastErr == nil {
 			a.status = "Nothing to clean in " + a.rootLabel()
 		}
@@ -285,30 +294,81 @@ func (a *App) refresh() {
 	a.shown = scan.Filter(a.found, a.query)
 }
 
-// refreshVolume reads the disk the scan is looking at. A failure is not
-// reported as an error: the capacity meter is context, not the task, and
-// the app works without it.
-func (a *App) refreshVolume() {
-	path := a.rootLabel()
+// rootPath is the path a scan actually reads, resolving the default to the
+// home directory.
+func (a *App) rootPath() string {
+	if len(a.roots) > 0 {
+		return a.roots[0]
+	}
+	if home, err := homeDir(); err == nil {
+		return home
+	}
+	return ""
+}
+
+// updateRoot works out what the window calls the place being scanned, and
+// the capacity of the volume it is on. It runs when the roots change and
+// when a scan finishes, never per frame: naming a volume is a syscall.
+func (a *App) updateRoot() {
+	path := a.rootPath()
+	a.rootName = a.nameFor(path)
+
 	vol, ok := disk.VolumeFor(path)
 	if !ok {
 		a.haveDisk = false
 		return
 	}
+	// The capacity card names the volume the way the header does. The
+	// label comes from the cached list: VolumeFor reports capacity only,
+	// so its Label is the bare root.
+	if cached, ok := a.cachedVolume(vol.Root); ok {
+		vol.Label = cached.Friendly()
+	}
 	a.volume = vol
 	a.haveDisk = true
 }
 
-// rootLabel is what the window calls the place being scanned.
-func (a *App) rootLabel() string {
-	if len(a.roots) == 1 {
-		return a.roots[0]
+// cachedVolume finds a volume in the list read at startup, which is the
+// only place the volume's own label is available.
+func (a *App) cachedVolume(root string) (disk.Volume, bool) {
+	for _, v := range a.volumes {
+		if v.Root == root {
+			return v, true
+		}
 	}
-	if len(a.roots) > 1 {
+	return disk.Volume{}, false
+}
+
+// nameFor names a scan target. A whole volume is named the way the system
+// names it, "Windows (C:)" rather than "C:\"; anything else keeps its
+// full path, because the path is what identifies a folder.
+func (a *App) nameFor(path string) string {
+	switch {
+	case len(a.roots) > 1:
 		return fmt.Sprintf("%d folders", len(a.roots))
+	case path == "":
+		return "this computer"
+	}
+	if v, ok := a.cachedVolume(path); ok {
+		return v.Friendly()
+	}
+	if v, ok := disk.VolumeFor(path); ok && v.Root == path {
+		return v.Friendly()
+	}
+	if len(a.roots) == 0 {
+		return "Home · " + path
+	}
+	return path
+}
+
+// rootLabel is what the window calls the place being scanned. It is read
+// on every frame, so it only reads the name computed by updateRoot.
+func (a *App) rootLabel() string {
+	if a.rootName != "" {
+		return a.rootName
 	}
 	if home, err := homeDir(); err == nil {
-		return home
+		return "Home · " + home
 	}
 	return "this computer"
 }

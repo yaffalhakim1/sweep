@@ -9,8 +9,15 @@ import (
 	"github.com/egoist/mygo"
 
 	"sweep/internal/clean"
+	"sweep/internal/disk"
 	"sweep/internal/scan"
 )
+
+// LoadVolumes reads the mounted filesystems once, so the picker can name
+// them without a syscall per frame.
+func (a *App) LoadVolumes() {
+	a.volumes = disk.Volumes()
+}
 
 // ChooseRoot asks the user for a folder to scan instead of the home
 // directory, which is how the app is pointed at a projects drive.
@@ -24,17 +31,26 @@ func (a *App) ChooseRoot() {
 	if err != nil || len(dirs) == 0 {
 		return
 	}
-	a.roots = dirs
+	a.SetRoots(dirs)
+}
+
+// ChooseVolume scans a whole mounted volume, which is what a user means by
+// "scan the other disk".
+func (a *App) ChooseVolume(root string) { a.SetRoots([]string{root}) }
+
+// SetRoots points the scan somewhere else and starts it. The window's name
+// for the target is worked out here rather than when the scan finishes, so
+// the header says where it is about to look, not where it used to.
+func (a *App) SetRoots(roots []string) {
+	a.roots = roots
+	a.selected = map[string]bool{}
+	a.updateRoot()
 	a.saveSettings()
 	a.StartScan()
 }
 
 // ResetRoot goes back to scanning the home directory.
-func (a *App) ResetRoot() {
-	a.roots = nil
-	a.saveSettings()
-	a.StartScan()
-}
+func (a *App) ResetRoot() { a.SetRoots(nil) }
 
 // Toggle chooses or unchoses one artifact.
 func (a *App) Toggle(path string) {

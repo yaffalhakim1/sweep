@@ -70,7 +70,10 @@ jobs:
           Copy-Item "dist/Sweep-windows-amd64-setup.exe" "dist/Sweep-setup.exe"
           Get-ChildItem dist | Select-Object Name, Length | Format-Table
 
-      - name: Publish the release
+      # A draft, not a published release: the generated notes are a starting
+      # point, and a person reads them before anyone else does. Publishing
+      # is one click from the release page.
+      - name: Publish the release as a draft
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -80,5 +83,8 @@ jobs:
           gh release create $env:TAG `
             --repo "${{ github.repository }}" `
             --title $env:TAG `
+            --draft `
             --generate-notes `
             $assets
+          Write-Output "Draft created. Review and publish it:"
+          Write-Output "  gh release view $env:TAG --web"
