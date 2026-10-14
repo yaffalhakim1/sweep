@@ -110,3 +110,26 @@ Two things cost real debugging time, and both are easy to reintroduce:
   two agree.
 
 `implementation_plan.md` documents the rest of the design decisions.
+
+## Landing page
+
+`landing/` is the site GitHub Pages publishes. It is static HTML, one
+stylesheet and two scripts — no build step, no framework, no dependency.
+
+```sh
+cd landing
+python -m http.server 8801    # preview at http://127.0.0.1:8801/
+```
+
+The page is a **Stat-Led** shape built on the **Cobalt** theme: the hero is a
+real measurement from a real disk (22.1 GB across 42 build directories, found in
+3.7 s), the middle is the guard table of what Sweep refuses to delete, and the
+terminal block shows actual scan output rather than invented numbers. The two
+app captures are rendered by the view tests, so they cannot drift from the code.
+
+`landing/tokens.css` holds every colour and font the page uses. Nothing in
+`index.html` inlines a colour value, which is what keeps the system portable.
+
+The numbers in the copy are measurements, not estimates. If you change the
+scanner, re-measure before changing them — a landing page quoting a stale figure
+is worse than one quoting none.

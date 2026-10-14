@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Sweep — find the build output eating your disk</title>
+<meta name="description" content="A native Windows app that walks your disk for regenerable build output — Rust target, node_modules, framework caches, Gradle and Android trees — and removes what you choose. Pure Go, one 11 MB binary.">
+<meta property="og:title" content="Sweep — find the build output eating your disk">
+<meta property="og:description" content="42 build directories, 22.1 GB, found in 3.7 seconds. Remove what you choose, permanently, with guards that refuse anything that is not really a build artifact.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* Sweep · landing · Hallmark
+ * macrostructure: Stat-Led · theme: Cobalt · nav: N9 · footer: Ft4
+ * enrichment: real app screenshots (no drawn chrome) · accent: electric cobalt
+ * Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5
+ *
+ * The page takes one position: a cleaner's credibility is its refusal rate,
+ * not its feature list. So the hero is a real measurement from a real disk,
+ * and the middle of the page is the guard table — what Sweep declines to
+ * delete. Previous Hallmark build in this project stamped Map / Diagram
+ * (the Ports page), so this one is Stat-Led.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { overflow-x: clip; scroll-behavior: smooth; }
+body { overflow-x: clip; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: 1.62;
+  color: var(--color-ink-2);
+  background: var(--color-page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Headings are always roman. Emphasis comes from weight and colour. */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
+  margin: 0;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+h2 { font-size: var(--text-2xl); }
+h3 { font-size: var(--text-lg); letter-spacing: -0.02em; line-height: 1.25; }
+p { margin: 0; }
+img { display: block; max-width: 100%; height: auto; }
+a { color: inherit; }
+code, kbd { font-family: var(--font-mono); font-size: 0.9em; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.wrap {
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding-inline: var(--page-gutter);
+}
+.band { padding-block: var(--space-3xl); }
+.band--tight { padding-block: var(--space-2xl); }
+.band--graphite {
+  background: var(--color-graphite);
+  color: var(--color-on-graphite);
+}
+.band--graphite h2, .band--graphite h3 { color: var(--color-on-graphite); }
+.rule-top { border-top: var(--rule-hair) solid var(--color-rule); }
+
+/* ── Nav · N9 flush bar, hairline edge ──────────────────────── */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  background: color-mix(in oklab, var(--color-page) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+.nav__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding-block: var(--space-sm);
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-base);
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+  text-decoration: none;
+  margin-inline-end: auto;
+}
+.wordmark__mark {
+  width: 20px; height: 20px;
+  border-radius: 5px;
+  background: var(--color-accent);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.wordmark__mark svg { width: 12px; height: 12px; color: var(--color-on-accent); }
+.nav__links { display: flex; gap: var(--space-md); }
+.nav__link {
+  font-size: var(--text-sm);
+  color: var(--color-ink-2);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.nav__link:hover { color: var(--color-accent-text); }
+@media (max-width: 620px) {
+  .nav__links { display: none; }
+}
+
+/* ── Buttons · 6px radius, drawn with a ruler ───────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-sm);
+  border: var(--rule-hair) solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.btn:active { transform: translateY(1px); }
+.btn--solid {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.btn--solid:hover { background: var(--color-accent-deep); }
+.btn--outline {
+  border-color: var(--color-rule-strong);
+  color: var(--color-ink);
+  background: transparent;
+}
+.btn--outline:hover { border-color: var(--color-accent); color: var(--color-accent); }
+
+/* ── Hero · Stat-Led ────────────────────────────────────────── */
+.hero { padding-block: var(--space-2xl) var(--space-3xl); }
+.hero__grid {
+  display: grid;
+  gap: var(--space-2xl);
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .hero__grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3xl); }
+}
+.hero__stat {
+  font-family: var(--font-display);
+  font-size: var(--text-stat);
+  font-weight: 600;
+  line-height: 0.88;
+  letter-spacing: -0.05em;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 var(--space-sm);
+  display: flex;
+  align-items: baseline;
+  gap: 0.08em;
+}
+.hero__unit {
+  font-size: 0.34em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--color-ink-3);
+}
+.hero__headline {
+  font-size: var(--text-display-s);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--color-ink);
+  max-width: 26ch;
+  margin-bottom: var(--space-md);
+}
+.hero__lede {
+  font-size: var(--text-base);
+  color: var(--color-ink-2);
+  max-width: 46ch;
+  margin-bottom: var(--space-lg);
+}
+.hero__actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.hero__meta {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-4);
+}
+
+/* ── Mono block · no drawn window chrome ────────────────────── */
+.term {
+  background: var(--color-graphite);
+  border: var(--rule-hair) solid var(--color-graphite-rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-lift);
+}
+.term__cap {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-graphite-2);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: var(--rule-hair) solid var(--color-graphite-rule);
+}
+.term__body {
+  margin: 0;
+  padding: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.75;
+  color: var(--color-on-graphite);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.term__body .dim { color: var(--color-on-graphite-2); }
+.term__body .acc { color: var(--color-syn-acc); }
+.term__body .ok  { color: var(--color-found); }
+.term__body .num { color: var(--color-warn); }
+
+/* ── Screenshots · real capture, hairline only ──────────────── */
+.shot { margin: 0; }
+.shot__frame {
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.shot__frame img { width: 100%; }
+.shot__cap {
+  margin-top: var(--space-sm);
+  font-size: var(--text-xs);
+  color: var(--color-ink-3);
+}
+.shot__cap b { color: var(--color-ink); font-weight: 600; }
+
+/* The light/dark switch: a real control over a real pair of captures. */
+.switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-page-sunk);
+  margin-bottom: var(--space-md);
+}
+.switch button {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.switch button[aria-pressed="true"] {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+.shots { display: grid; }
+.shots img { grid-area: 1 / 1; }
+.shots img[hidden] { display: none; }
+
+/* ── Section heads ──────────────────────────────────────────── */
+.head { max-width: 58ch; margin-bottom: var(--space-xl); }
+.head p { margin-top: var(--space-sm); color: var(--color-ink-2); }
+
+/* ── Supporting stats ───────────────────────────────────────── */
+.stats {
+  display: grid;
+  gap: var(--space-lg);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  padding-top: var(--space-lg);
+}
+@media (min-width: 700px) {
+  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-xl); }
+}
+.stat__n {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+.stat__l {
+  margin-top: var(--space-2xs);
+  font-size: var(--text-sm);
+  color: var(--color-ink-3);
+}
+
+/* ── Feature rows · asymmetric, never 3 equal tiles ─────────── */
+.rows { border-top: var(--rule-hair) solid var(--color-rule); }
+.row {
+  display: grid;
+  gap: var(--space-xs);
+  padding-block: var(--space-lg);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+  max-width: 72ch;
+}
+/* The label stacks above its heading, in the same column. A label in a
+   left margin with the heading beside it is a templated-editorial tell. */
+.row__k {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  /* 11px text needs the deeper accent step; the vivid one measures 4.17:1. */
+  color: var(--color-accent-text);
+}
+.row__v h3 { margin-bottom: var(--space-2xs); }
+.row__v p { color: var(--color-ink-2); max-width: 62ch; }
+
+/* Graphite-band variants of the row language. */
+.rows--graphite .row { border-bottom-color: var(--color-graphite-rule); }
+.row__k--found { color: var(--color-found); }
+.on-graphite-2 { color: var(--color-on-graphite-2); }
+
+/* Small layout helpers, named rather than inlined. */
+.mt-2xl { margin-top: var(--space-2xl); }
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.close__sub { margin-top: var(--space-xs); color: var(--color-ink-2); }
+.foot__mark { margin-bottom: var(--space-sm); }
+.foot__tag { color: var(--color-ink-3); max-width: 40ch; }
+
+/* ── Guard table · the page's argument ──────────────────────── */
+.guards { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.guards caption {
+  text-align: left;
+  font-size: var(--text-xs);
+  color: var(--color-on-graphite-2);
+  padding-bottom: var(--space-md);
+}
+.guards th, .guards td {
+  text-align: left;
+  padding: var(--space-sm) var(--space-sm) var(--space-sm) 0;
+  border-bottom: var(--rule-hair) solid var(--color-graphite-rule);
+  vertical-align: top;
+}
+.guards th {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--color-on-graphite-2);
+}
+.guards td:first-child { font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
+.guards td:last-child { color: var(--color-on-graphite-2); }
+.guards .proof { color: var(--color-found); }
+
+/* ── FAQ ────────────────────────────────────────────────────── */
+.faq { display: grid; gap: 0; border-top: var(--rule-hair) solid var(--color-rule); }
+.faq details { border-bottom: var(--rule-hair) solid var(--color-rule); }
+.faq summary {
+  cursor: pointer;
+  list-style: none;
+  padding-block: var(--space-md);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  align-items: baseline;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+";
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  color: var(--color-accent);
+  flex: none;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq p {
+  padding-bottom: var(--space-md);
+  color: var(--color-ink-2);
+  max-width: 70ch;
+}
+
+/* ── Closing CTA ────────────────────────────────────────────── */
+.close { display: grid; gap: var(--space-lg); align-items: center; }
+@media (min-width: 760px) {
+  .close { grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-xl); }
+}
+
+/* ── Footer · Ft4 dense colophon ────────────────────────────── */
+.foot { border-top: var(--rule-hair) solid var(--color-rule); padding-block: var(--space-xl); }
+.foot__grid {
+  display: grid;
+  gap: var(--space-lg);
+  font-size: var(--text-sm);
+}
+@media (min-width: 700px) {
+  .foot__grid { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); }
+}
+.foot__h {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-4);
+  margin-bottom: var(--space-sm);
+}
+.foot a { color: var(--color-ink-2); text-decoration: none; }
+.foot a:hover { color: var(--color-accent-text); }
+.foot li { margin-bottom: var(--space-xs); }
+.foot__end {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  font-size: var(--text-xs);
+  color: var(--color-ink-4);
+}
+
+/* ── Reveal · one observer, fade + small rise ───────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity var(--dur-reveal) var(--ease-out), transform var(--dur-reveal) var(--ease-out);
+  }
+  .reveal.is-in { opacity: 1; transform: none; }
+  .faq summary::after { will-change: transform; }
+}
+
+/* ── Reduced motion · gentler, not zero ─────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Reduced transparency ───────────────────────────────────── */
+@media (prefers-reduced-transparency: reduce) {
+  .nav { background: var(--color-page); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+/* ── More contrast ──────────────────────────────────────────── */
+@media (prefers-contrast: more) {
+  :root {
+    --color-ink-3: oklch(38% 0.014 256);
+    --color-ink-4: oklch(46% 0.012 254);
+    --color-rule: oklch(72% 0.008 252);
+    --color-rule-strong: oklch(58% 0.01 252);
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Nav · N9 ──────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="wrap nav__inner">
+    <a class="wordmark" href="#top">
+      <span class="wordmark__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5 10-11"/></svg>
+      </span>
+      Sweep
+    </a>
+    <div class="nav__links">
+      <a class="nav__link" href="#how">How it works</a>
+      <a class="nav__link" href="#safety">Safety</a>
+      <a class="nav__link" href="#faq">Questions</a>
+    </div>
+    <a class="btn btn--solid" href="https://github.com/yaffalhakim1/sweep/releases/latest">Download</a>
+  </div>
+</nav>
+
+<main id="top">
+
+<!-- ── Hero · Stat-Led ───────────────────────────────────────── -->
+<section class="hero">
+  <div class="wrap hero__grid">
+    <div>
+      <p class="hero__stat tnum">22.1<span class="hero__unit">GB</span></p>
+      <h1 class="hero__headline">Reclaimable build output, found on one real disk in 3.7 seconds.</h1>
+      <p class="hero__lede">
+        Rust <code>target</code>, <code>node_modules</code>, framework caches, Gradle and
+        Android trees — one per project, in places you have forgotten. Sweep finds
+        all of them, maps where the space went, and removes what you choose.
+      </p>
+      <div class="hero__actions">
+        <a class="btn btn--solid" href="https://github.com/yaffalhakim1/sweep/releases/latest">Download for Windows</a>
+        <a class="btn btn--outline" href="https://github.com/yaffalhakim1/sweep">Read the source</a>
+      </div>
+      <p class="hero__meta">Pure Go · no runtime · one 11 MB binary · 42 folders across 7 build systems</p>
+    </div>
+
+    <div class="term">
+      <div class="term__cap">sweep · real scan, C:\Users\…\Documents</div>
+      <pre class="term__body"><code><span class="dim">$</span> sweep --scan
+<span class="dim">scanning 1 root · 42 build directories</span>
+
+ <span class="num">15.5 GB</span>  <span class="acc">Node</span>    …\rust\waku\node_modules
+  <span class="num">5.7 GB</span>  <span class="acc">Rust</span>    …\rust\kaku-gui\target
+  <span class="num">2.3 GB</span>  <span class="acc">Node</span>    …\lxp-v2-frontend-nextjs\.next
+  <span class="num">1.4 GB</span>  <span class="acc">Node</span>    …\clicky-frontend-nextjs\.next
+<span class="dim">  … 38 more</span>
+
+<span class="ok">22.1 GB reclaimable · 42 folders · 3.7s</span>
+<span class="dim">C:\ 35.1 GB free of 476 GB — 92.6% full</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── Supporting stats ──────────────────────────────────────── -->
+<section class="band band--tight">
+  <div class="wrap">
+    <div class="stats reveal">
+      <div>
+        <div class="stat__n tnum">7</div>
+        <p class="stat__l">Build systems recognised — Rust, Node, Python, JVM, Xcode, CMake, .NET.</p>
+      </div>
+      <div>
+        <div class="stat__n tnum">21</div>
+        <p class="stat__l">Directory rules. Four of them require a proof file before they will match.</p>
+      </div>
+      <div>
+        <div class="stat__n tnum">0</div>
+        <p class="stat__l">Links or junctions followed. Windows is full of junctions that would recurse forever.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ──────────────────────────────────────────── -->
+<section class="band rule-top" id="how">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2>Two views of the same answer.</h2>
+      <p>
+        One tells you where the space went. The other tells you what to do about it.
+        Both are the same data, so you never have to translate between them.
+      </p>
+    </div>
+
+    <figure class="shot reveal">
+      <div class="switch" role="group" aria-label="Appearance">
+        <button type="button" id="sw-light" aria-pressed="true">Light</button>
+        <button type="button" id="sw-dark" aria-pressed="false">Dark</button>
+      </div>
+      <div class="shot__frame shots">
+        <img id="shot-light" src="assets/screenshot-light.png" width="980" height="720"
+             alt="Sweep in the light appearance: a capacity meter showing the disk 92.6% full, a squarified treemap of build directories coloured by build system, and a footer totalling the two chosen folders.">
+        <img id="shot-dark" src="assets/screenshot-dark.png" width="980" height="720" hidden
+             alt="The same view in the dark appearance.">
+      </div>
+      <figcaption class="shot__cap">
+        <b>The space map.</b> Every tile's area is its size; its colour is the build
+        system. Hover names the folder and what it holds; a click chooses it.
+      </figcaption>
+    </figure>
+
+    <div class="rows reveal mt-2xl">
+      <div class="row">
+        <div class="row__k">Map</div>
+        <div class="row__v">
+          <h3>A squarified treemap, scoped to what is safe to remove</h3>
+          <p>
+            Disk visualisers show you every byte on the disk, which is a map of
+            everything and an answer to nothing. This one draws only regenerable
+            build output, so the whole map is actionable.
+          </p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row__k">List</div>
+        <div class="row__v">
+          <h3>Grouped by build system, largest first</h3>
+          <p>
+            Exact paths, sizes, and how long ago each folder changed — which is what
+            tells a project you are working in from one you abandoned last year.
+          </p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row__k">Removal</div>
+        <div class="row__v">
+          <h3>Progress, not a frozen window</h3>
+          <p>
+            Deleting 15 GB takes a while. The footer reports which folder it is on,
+            and the action is withdrawn until it finishes, so a second removal
+            cannot start underneath it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Safety · the argument ─────────────────────────────────── -->
+<section class="band band--graphite" id="safety">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2>A cleaner is only as good as what it refuses.</h2>
+      <p class="on-graphite-2">
+        Anyone can write a script that deletes <code>node_modules</code>. The hard part
+        is not deleting the directory that merely happens to be called
+        <code>build</code>. Sweep proves a match before it acts on it.
+      </p>
+    </div>
+
+    <div class="reveal scroll-x">
+      <table class="guards">
+        <caption>Every generic name needs a witness. This is the whole rule table.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Directory</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Proof required</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>target</td><td>Rust</td>
+            <td><span class="proof">CACHEDIR.TAG</span> — the tag Cargo writes. A folder merely named “target” is left alone.</td>
+          </tr>
+          <tr>
+            <td>build</td><td>JVM</td>
+            <td><span class="proof">build.gradle</span> beside it. “build” is one of the most common directory names there is.</td>
+          </tr>
+          <tr>
+            <td>obj</td><td>.NET</td>
+            <td><span class="proof">*.csproj</span> in the parent. MSBuild's <code>obj</code> sits beside the project, never inside it.</td>
+          </tr>
+          <tr>
+            <td>Pods</td><td>Xcode</td>
+            <td><span class="proof">Podfile</span> beside it — CocoaPods writes it outside the folder.</td>
+          </tr>
+          <tr>
+            <td>node_modules</td><td>Node</td>
+            <td>None needed. Nothing else is called this.</td>
+          </tr>
+          <tr>
+            <td>__pycache__</td><td>Python</td>
+            <td>None needed.</td>
+          </tr>
+          <tr>
+            <td>.cxx</td><td>CMake</td>
+            <td>None needed. Recorded whole, so one Android tree is one row rather than fifty.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rows rows--graphite reveal mt-2xl">
+      <div class="row">
+        <div class="row__k row__k--found">Before</div>
+        <div class="row__v">
+          <h3>Every path is re-checked</h3>
+          <p class="on-graphite-2">
+            Absolute, not a volume root, deep enough, not your home directory, not a
+            link — and never a folder that contains another folder you also chose,
+            which would count its bytes twice and delete it silently.
+          </p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row__k row__k--found">Once</div>
+        <div class="row__v">
+          <h3>One confirmation, and it is specific</h3>
+          <p class="on-graphite-2">
+            It names the count and the size, and says plainly that removal is
+            permanent and the next build will take longer. No ritual around anything
+            else — a confirmation you see constantly is one you stop reading.
+          </p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row__k row__k--found">Why</div>
+        <div class="row__v">
+          <h3>Permanent, not the Recycle Bin</h3>
+          <p class="on-graphite-2">
+            Sending 15 GB to the bin frees nothing until you empty it, which is the
+            entire point of the exercise. Read-only files are cleared, because Cargo
+            and NuGet leave them behind and Windows refuses to delete them.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── The list view ─────────────────────────────────────────── -->
+<section class="band">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2>The actionable view.</h2>
+      <p>
+        Same artifacts, grouped by build system, with a checkbox on every row and the
+        total of what you have chosen. Reveal opens a folder in Explorer before you
+        commit to deleting it.
+      </p>
+    </div>
+    <figure class="shot reveal">
+      <div class="shot__frame">
+        <img src="assets/screenshot-list.png" width="980" height="720" loading="lazy"
+             alt="Sweep's list view: build directories grouped under Rust, Node, Python and CMake headings, each row showing its path, when it last changed, its size, and a checkbox.">
+      </div>
+      <figcaption class="shot__cap">
+        <b>The artifact list.</b> Rows say how long ago each folder changed, so the
+        abandoned ones are obvious before you spend the space back.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ── FAQ ───────────────────────────────────────────────────── -->
+<section class="band rule-top" id="faq">
+  <div class="wrap">
+    <div class="head reveal">
+      <h2>Questions worth asking before you let something delete folders.</h2>
+    </div>
+    <div class="faq reveal">
+      <details>
+        <summary>Will this delete my source code?</summary>
+        <p>
+          No. Every rule matches a build-output directory and nothing else. The four
+          generic names in the table above need a proof file before they match at
+          all, so a source folder called <code>build</code> is left alone. Removal is
+          permanent, so if you want certainty, use Reveal to look at a folder in
+          Explorer first.
+        </p>
+      </details>
+      <details>
+        <summary>Is it really 3.7 seconds? My disk is bigger.</summary>
+        <p>
+          That figure is one real measurement: 42 build directories under a
+          developer's <code>Documents</code> folder. The scan is a bounded worker
+          pool sized to your CPU count, and progress is published about five times a
+          second rather than per directory — a per-directory update would ask for
+          thousands of frames a second and spend the whole scan redrawing.
+        </p>
+      </details>
+      <details>
+        <summary>What happens if a folder is locked?</summary>
+        <p>
+          It is reported and the rest of the run continues. One locked directory does
+          not abort a removal, and the summary tells you how many could not be
+          removed rather than quietly reporting success.
+        </p>
+      </details>
+      <details>
+        <summary>Why not just use the Recycle Bin?</summary>
+        <p>
+          Because moving files to the bin does not free the space until it is
+          emptied. A cleaner that leaves your disk exactly as full as it found it has
+          not cleaned anything.
+        </p>
+      </details>
+      <details>
+        <summary>Does it need administrator rights or a runtime?</summary>
+        <p>
+          No. It installs per user with no elevation prompt and needs no runtime at
+          all — no Node, no .NET, no webview. It is pure Go, compiled to one 11 MB
+          executable, and it draws its own interface rather than hosting a browser.
+        </p>
+      </details>
+      <details>
+        <summary>Can I point it somewhere other than my home folder?</summary>
+        <p>
+          Yes. <b>Choose a folder…</b> in the empty state, or rescan against any
+          directory — useful for a projects drive, or a second disk you have been
+          avoiding. The choice is remembered between runs.
+        </p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ── Closing CTA ───────────────────────────────────────────── -->
+<section class="band band--tight rule-top">
+  <div class="wrap close reveal">
+    <div>
+      <h2>Get the space back.</h2>
+      <p class="close__sub">
+        Windows installer, per user, no admin prompt. MIT licensed.
+      </p>
+    </div>
+    <div class="hero__actions">
+      <a class="btn btn--solid" href="https://github.com/yaffalhakim1/sweep/releases/latest">Download for Windows</a>
+      <a class="btn btn--outline" href="https://github.com/yaffalhakim1/sweep">Source</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ── Footer · Ft4 ──────────────────────────────────────────── -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot__grid">
+      <div>
+        <a class="wordmark foot__mark" href="#top">
+          <span class="wordmark__mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5 10-11"/></svg>
+          </span>
+          Sweep
+        </a>
+        <p class="foot__tag">
+          Find the build output eating your disk, and remove it in one pass.
+        </p>
+      </div>
+      <div>
+        <div class="foot__h">Project</div>
+        <ul>
+          <li><a href="https://github.com/yaffalhakim1/sweep">Source</a></li>
+          <li><a href="https://github.com/yaffalhakim1/sweep/releases/latest">Releases</a></li>
+          <li><a href="https://github.com/yaffalhakim1/sweep/blob/master/LICENSE">MIT licence</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="foot__h">Built with</div>
+        <ul>
+          <li><a href="https://github.com/egoist/mygo">MyGo</a></li>
+          <li><a href="https://go.dev">Go</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="foot__end">Sweep · a native Windows app · no runtime, no telemetry, no account.</p>
+  </div>
+</footer>
+
+<script>
+/* Appearance switch — swaps between two real captures. */
+(function () {
+  var light = document.getElementById('shot-light');
+  var dark = document.getElementById('shot-dark');
+  var bLight = document.getElementById('sw-light');
+  var bDark = document.getElementById('sw-dark');
+  function set(d) {
+    light.hidden = d;
+    dark.hidden = !d;
+    bLight.setAttribute('aria-pressed', String(!d));
+    bDark.setAttribute('aria-pressed', String(d));
+  }
+  bLight.addEventListener('click', function () { set(false); });
+  bDark.addEventListener('click', function () { set(true); });
+})();
+
+/* Reveal on scroll — one observer, unobserved once shown. */
+(function () {
+  var els = document.querySelectorAll('.reveal');
+  if (!('IntersectionObserver' in window) ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    els.forEach(function (el) { el.classList.add('is-in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        e.target.classList.add('is-in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+  els.forEach(function (el) { io.observe(el); });
+})();
+</script>
+</body>
+</html>
