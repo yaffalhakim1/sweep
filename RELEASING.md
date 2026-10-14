@@ -88,6 +88,11 @@ starting point, not the release.
 gh release view v0.2.0 --web
 ```
 
+Publishing a draft creates the git tag, which fires `release.yml` a second time
+through its `v*` trigger. The workflow's first step checks whether the tag
+already has a release and stops there, so the second run does nothing. If you
+ever see two releases for one tag, that guard is what is missing.
+
 ### After publishing
 
 Check the download the site offers actually resolves, because it is the one
@@ -125,6 +130,11 @@ curl -sIL -o /dev/null -w '%{http_code}\n' \
 - **The version and the tag must agree.** A user who downloads
   `v0.2.0` and gets an installer claiming `0.1.0` cannot tell what they have.
   The workflow fails rather than publish that.
+- **Publishing a draft re-triggers the release.** Publishing creates the tag,
+  the tag fires `release.yml`, and the run builds a second release. The
+  workflow's guard step is what stops it: it checks whether the tag already has
+  a release and skips the rest of the job if it does. This happened once — the
+  `v0.2.0` release briefly existed twice — which is why the guard is there.
 
 ## Not set up: signed auto-update
 
