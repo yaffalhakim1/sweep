@@ -58,10 +58,14 @@ func onColor(fill ui.Color) ui.Color {
 	return ink
 }
 
-// contrast is the WCAG contrast ratio between two opaque colours, from 1
-// (identical) to 21 (black on white).
+// contrast is the WCAG contrast ratio between two colours, from 1
+// (identical) to 21 (black on white). A translucent foreground is
+// composited over the background first, because that is what the eye
+// sees: a selection wash at 16% alpha is nearly the background, not the
+// accent it was made from.
 func contrast(a, b ui.Color) float64 {
-	la, lb := luminance(a), luminance(b)
+	fg := a.Over(b)
+	la, lb := luminance(fg), luminance(b)
 	if la < lb {
 		la, lb = lb, la
 	}

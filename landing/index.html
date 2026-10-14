@@ -357,7 +357,11 @@ ul { margin: 0; padding: 0; list-style: none; }
 /* Graphite-band variants of the row language. */
 .rows--graphite .row { border-bottom-color: var(--color-graphite-rule); }
 .row__k--found { color: var(--color-found); }
-.on-graphite-2 { color: var(--color-on-graphite-2); }
+/* Scoped rather than a utility class: `.head p` and `.row__v p` are
+   element-qualified, so a bare class would lose to them and leave the
+   light-page ink on the graphite ground. */
+.band--graphite .head p,
+.band--graphite .row__v p { color: var(--color-on-graphite-2); }
 
 /* Small layout helpers, named rather than inlined. */
 .mt-2xl { margin-top: var(--space-2xl); }
@@ -643,7 +647,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   <div class="wrap">
     <div class="head reveal">
       <h2>A cleaner is only as good as what it refuses.</h2>
-      <p class="on-graphite-2">
+      <p>
         Anyone can write a script that deletes <code>node_modules</code>. The hard part
         is not deleting the directory that merely happens to be called
         <code>build</code>. Sweep proves a match before it acts on it.
@@ -698,7 +702,7 @@ ul { margin: 0; padding: 0; list-style: none; }
         <div class="row__k row__k--found">Before</div>
         <div class="row__v">
           <h3>Every path is re-checked</h3>
-          <p class="on-graphite-2">
+          <p>
             Absolute, not a volume root, deep enough, not your home directory, not a
             link — and never a folder that contains another folder you also chose,
             which would count its bytes twice and delete it silently.
@@ -709,7 +713,7 @@ ul { margin: 0; padding: 0; list-style: none; }
         <div class="row__k row__k--found">Once</div>
         <div class="row__v">
           <h3>One confirmation, and it is specific</h3>
-          <p class="on-graphite-2">
+          <p>
             It names the count and the size, and says plainly that removal is
             permanent and the next build will take longer. No ritual around anything
             else — a confirmation you see constantly is one you stop reading.
@@ -720,7 +724,7 @@ ul { margin: 0; padding: 0; list-style: none; }
         <div class="row__k row__k--found">Why</div>
         <div class="row__v">
           <h3>Permanent, not the Recycle Bin</h3>
-          <p class="on-graphite-2">
+          <p>
             Sending 15 GB to the bin frees nothing until you empty it, which is the
             entire point of the exercise. Read-only files are cleared, because Cargo
             and NuGet leave them behind and Windows refuses to delete them.

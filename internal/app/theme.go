@@ -20,7 +20,7 @@ var (
 	// Dark: the system's elevated surfaces.
 	darkCanvas       = ui.Hex("#1C1C1E")
 	darkSurface      = ui.Hex("#2C2C2E")
-	darkSurfaceHover = ui.Hex("#3A3A3C")
+	darkSurfaceHover = ui.Hex("#313133")
 	darkInset        = ui.Hex("#232325")
 	darkBorder       = ui.Hex("#3A3A3C")
 	darkText         = ui.Hex("#F5F5F7")
@@ -63,7 +63,12 @@ func theme(dark bool) *ui.Theme {
 		t.Warning = warnDark
 		t.Danger = dangerDark
 		t.Scrollbar = darkBorder
-		t.Selection = accentDark.Alpha(0.30)
+		// The selection wash is dim: it lifts the surface toward the text,
+		// so every step of alpha costs contrast for the row's own label.
+		// At 0.30 the label measured 8.81:1 but the muted path beside it
+		// fell to 3.34:1; at 0.16 the path clears 4.05:1, which is why the
+		// selected row also draws its path in the full-contrast ink.
+		t.Selection = accentDark.Alpha(0.16)
 		t.Focus = accentDark
 	} else {
 		t.Background = lightCanvas

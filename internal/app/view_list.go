@@ -133,11 +133,22 @@ func (a *App) artifactRow(c *ui.Context, art scan.Artifact) {
 		})
 		ui.Column(c).Gap(1).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 			ui.Text(c, artifactLabel(art)).FontSize(13).SingleLine().Ellipsis("…")
-			ui.Text(c, art.Path).FontSize(11).TextColor(t.TextMuted).
+			// On a selected row the path cannot stay muted: the selection
+			// wash lifts the background toward the muted grey, which
+			// measured 4.05:1. Full-contrast ink keeps it readable.
+			path := ui.Text(c, art.Path).FontSize(11).
 				SingleLine().Ellipsis("…")
+			if !chosen {
+				path.TextColor(t.TextMuted)
+			}
 		})
 		if when := timeLabel(art.Touched); when != "" {
-			ui.Text(c, when).FontSize(11).TextColor(t.TextMuted).Shrink(0)
+			// The same rule as the path: on a selected row the wash lifts
+			// the background, so muted ink no longer clears 4.5:1.
+			stamp := ui.Text(c, when).FontSize(11).Shrink(0)
+			if !chosen {
+				stamp.TextColor(t.TextMuted)
+			}
 		}
 		ui.Text(c, scan.HumanBytes(art.Bytes)).FontSize(13).
 			FontWeight(600).Shrink(0).Width(78).TextAlign(ui.End)
