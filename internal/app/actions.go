@@ -13,10 +13,19 @@ import (
 	"sweep/internal/scan"
 )
 
-// LoadVolumes reads the mounted filesystems once, so the picker can name
-// them without a syscall per frame.
-func (a *App) LoadVolumes() {
-	a.volumes = disk.Volumes()
+// LoadVolumes reads the mounted filesystems. It runs once at startup and
+// again whenever the picker opens, so a drive plugged in after launch is
+// offered without restarting the app.
+func (a *App) LoadVolumes() { a.setVolumes(disk.Volumes()) }
+
+// setVolumes takes a freshly read volume list, keeping the previous one
+// when the read came back empty: a transient failure must not empty the
+// picker and take the current target's name with it.
+func (a *App) setVolumes(volumes []disk.Volume) {
+	if len(volumes) == 0 && len(a.volumes) > 0 {
+		return
+	}
+	a.volumes = volumes
 }
 
 // ChooseRoot asks the user for a folder to scan instead of the home
