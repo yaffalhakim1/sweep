@@ -68,6 +68,15 @@ A tool that deletes directories has to be boring about it. Sweep is:
 Removal is permanent rather than to the Recycle Bin on purpose: moving files to
 the bin does not free the space until it is emptied, which is the entire point.
 
+## Install
+
+Download the installer from [Releases](https://github.com/yaffalhakim1/sweep/releases/latest)
+and run it. It installs per user to `%LOCALAPPDATA%\Programs\Sweep` with no
+administrator prompt, and adds a Start Menu entry. Uninstall from Settings, Apps.
+
+Two builds are published: pick `amd64` for Intel and AMD, `arm64` for Windows on
+ARM. If you are not sure, `amd64` runs on both.
+
 ## Build
 
 Needs [Go](https://go.dev/dl/) 1.27 or later. No other toolchain, no Node, no
