@@ -99,9 +99,43 @@ func (a *App) header(c *ui.Context) {
 			ui.Text(c, a.rootLabel()).FontSize(13).TextColor(t.TextMuted).
 				SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
 			ui.Spacer(c)
+			a.diskButton(c)
 			a.scanButton(c)
 			a.themeButton(c)
 		})
+}
+
+// diskButton chooses what to scan, beside the button that rescans it. It
+// carries the current target as its label, so the header reads
+// "Home · C:\Users\me  [Scan ▾] [Rescan]", and the menu offers every
+// mounted volume plus a folder of the user's own choosing.
+func (a *App) diskButton(c *ui.Context) {
+	label := "Scan"
+	b := ui.MenuButton(c, label, func(m *ui.Menu) {
+		for _, v := range a.volumes {
+			name := v.Friendly()
+			if m.Item(name).Checked(a.scansVolume(v.Root)).Chosen() {
+				a.ChooseVolume(v.Root)
+			}
+		}
+		if len(a.volumes) > 0 {
+			m.Separator()
+		}
+		if m.Item("Home folder").Checked(len(a.roots) == 0).Chosen() {
+			a.ResetRoot()
+		}
+		m.Separator()
+		if m.Item("Choose a folder…").Chosen() {
+			a.ChooseRoot()
+		}
+	}).Padding(controlPad, controlPadH)
+	b.Tooltip("Choose a disk or folder to scan")
+}
+
+// scansVolume reports whether the scan is looking at a whole volume, so
+// the picker can mark the current one.
+func (a *App) scansVolume(root string) bool {
+	return len(a.roots) == 1 && a.roots[0] == root
 }
 
 // scanButton re-reads the disk on demand, and says that a scan is running

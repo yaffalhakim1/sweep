@@ -81,7 +81,7 @@ for Windows on ARM machines.
 ## Build
 
 Needs [Go](https://go.dev/dl/) 1.27 or later. No other toolchain, no Node, no
-webview runtime.
+webview runtime. The release process is in [RELEASING.md](RELEASING.md).
 
 ```sh
 go tool mygo build      # Sweep.exe and the installer, in build/windows-amd64
