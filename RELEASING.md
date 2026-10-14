@@ -5,11 +5,11 @@ for a reason: a release must be able to name the exact commit it shipped.
 
 ## 1 · Branch
 
-Branch off a freshly-fetched `master`, named for what it does.
+Branch off a freshly-fetched `main`, named for what it does.
 
 ```sh
 git fetch origin
-git checkout -b feat/choose-disk origin/master
+git checkout -b feat/choose-disk origin/main
 ```
 
 `feat/` for a feature, `fix/` for a defect, `docs/` for prose. The branch name
@@ -21,7 +21,7 @@ Open it before you are finished, so CI runs on the work in progress.
 
 ```sh
 git push -u origin feat/choose-disk
-gh pr create --fill --base master
+gh pr create --fill --base main
 ```
 
 `--fill` takes the title and body from your commits. Edit the body to say what
@@ -36,7 +36,7 @@ tests, and a build of both Windows architectures.
 gh pr merge <n> --squash --delete-branch
 ```
 
-One commit per change on `master`, whatever the branch looked like. The branch
+One commit per change on `main`, whatever the branch looked like. The branch
 goes away with it.
 
 ## 4 · Bump
@@ -47,23 +47,21 @@ Its own commit, so the version bump is never mixed into a feature diff.
 bun run version:bump <next>
 ```
 
-This repo has **no `package.json`** — it is a Go project — so `bun run
-version:bump` does not exist here. The equivalent, and the one to use:
+`package.json` holds only this one script, which runs
+`go run ./internal/tools/versionbump`. The app is Go and Bun is not a runtime
+dependency; the script exists so the release command is one line, and the Go
+tool it calls is the part that matters.
 
 ```sh
-go run ./internal/tools/versionbump 0.2.0
-git add mygo.json && git commit -m "Bump to 0.2.0" && git push
+bun run version:bump 0.2.2      # or, without Bun:
+go run ./internal/tools/versionbump 0.2.2
+git add mygo.json && git commit -m "Bump to 0.2.2" && git push
 ```
 
 `mygo.json` is the one place the version lives: the build names the installer
 from it, and `release.yml` checks the tag against it. The tool rewrites that
 single field in place and refuses anything that is not a version, so a bump is
 always a one-line diff.
-
-If you would rather have `bun run version:bump` as the documented interface,
-add a `package.json` with that script — but a Go project that needs Bun
-installed to cut a release is a worse trade than one command that is four words
-longer.
 
 ## 5 · Release
 
@@ -112,7 +110,7 @@ curl -sIL -o /dev/null -w '%{http_code}\n' \
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `build.yml` | push to `master`, every PR | `gofmt`, `mygo vet`, tests, build both architectures |
+| `build.yml` | push to `main`, every PR | `gofmt`, `mygo vet`, tests, build both architectures |
 | `release.yml` | a `v*` tag, or dispatch | the above, plus tag/version check, and publishes |
 | `pages.yml` | changes under `landing/` | publishes the landing page |
 
