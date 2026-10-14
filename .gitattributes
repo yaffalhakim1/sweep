@@ -1,0 +1,10 @@
+# Source files are stored with LF and checked out with LF, whatever the
+# platform's default is. Without this, a Windows checkout converts them to
+# CRLF and gofmt flags every file, so the formatting check fails on files
+# nobody edited.
+* text=auto eol=lf
+
+# Binaries, so they are never line-ending converted.
+*.png binary
+*.exe binary
+*.ico binary
