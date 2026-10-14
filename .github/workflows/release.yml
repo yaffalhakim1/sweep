@@ -50,6 +50,12 @@ jobs:
       # "Sweep Setup <version> <arch>.exe", so the executables are renamed
       # per architecture before they are published; a release cannot hold
       # two assets with the same name.
+      #
+      # The version-less aliases exist so a link can point at
+      # releases/latest/download/<name> and keep working across releases.
+      # "Sweep-setup.exe" is the amd64 installer under a name that asks the
+      # user nothing: someone who does not know their architecture gets a
+      # working installer instead of a choice they cannot make.
       - name: Collect the release assets
         shell: pwsh
         run: |
@@ -59,7 +65,9 @@ jobs:
             $dir = "build/windows-$arch"
             Copy-Item "$dir/Sweep Setup $version $arch.exe" "dist/Sweep-$version-windows-$arch-setup.exe"
             Copy-Item "$dir/Sweep.exe" "dist/Sweep-$version-windows-$arch.exe"
+            Copy-Item "$dir/Sweep Setup $version $arch.exe" "dist/Sweep-windows-$arch-setup.exe"
           }
+          Copy-Item "dist/Sweep-windows-amd64-setup.exe" "dist/Sweep-setup.exe"
           Get-ChildItem dist | Select-Object Name, Length | Format-Table
 
       - name: Publish the release
