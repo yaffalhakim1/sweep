@@ -1,0 +1,8 @@
+{
+  "name": "sweep",
+  "private": true,
+  "description": "Scripts for cutting a release. The app itself is Go, and Bun is not a runtime dependency.",
+  "scripts": {
+    "version:bump": "go run ./internal/tools/versionbump"
+  }
+}
