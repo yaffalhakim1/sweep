@@ -1,0 +1,14 @@
+# Build output
+/build/
+/.mygo/
+mygo_windows_*.syso
+
+# A stray build of the app, if one is left in the root
+/Sweep.exe
+
+# Working artifacts for a task, not part of the project
+/task.md
+/walkthrough.md
+
+# Renders written by the view tests; docs/ holds the curated ones
+/internal/app/testdata/
