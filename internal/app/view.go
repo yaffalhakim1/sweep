@@ -112,6 +112,11 @@ func (a *App) header(c *ui.Context) {
 func (a *App) diskButton(c *ui.Context) {
 	label := "Scan"
 	b := ui.MenuButton(c, label, func(m *ui.Menu) {
+		// The menu's build callback runs when the menu opens, which is the
+		// right moment to re-read the drives: a disk plugged in since
+		// launch appears here, and the cost is one enumeration per open
+		// rather than one per frame.
+		a.LoadVolumes()
 		for _, v := range a.volumes {
 			name := v.Friendly()
 			if m.Item(name).Checked(a.scansVolume(v.Root)).Chosen() {

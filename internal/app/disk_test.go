@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+
+	"sweep/internal/disk"
 )
 
 // TestDiskPickerIsInTheHeader checks the control exists beside Rescan, and
@@ -184,5 +186,72 @@ func TestCapacityCardNamesTheVolume(t *testing.T) {
 	}
 	if a.rootLabel() != v.Friendly() {
 		t.Errorf("header says %q, want %q", a.rootLabel(), v.Friendly())
+	}
+}
+
+// TestPickerReReadsDrivesWhenItOpens is the point of refreshing on open:
+// the list held in memory is emptied, the menu is opened, and the drives
+// must come back. If the menu only read the cached list, a disk plugged in
+// after launch would never appear — and the other disk is usually exactly
+// the one that was not there yet.
+func TestPickerReReadsDrivesWhenItOpens(t *testing.T) {
+	a := New(Settings{})
+	a.LoadVolumes()
+	if len(a.volumes) == 0 {
+		t.Skip("no volumes")
+	}
+	want := len(a.volumes)
+
+	// Forget what was read at startup.
+	a.volumes = nil
+
+	tt := ui.NewTester(a.viewFn, 1000, 720)
+	if err := tt.Click("Scan"); err != nil {
+		t.Fatalf("the scan-target button is not clickable: %v", err)
+	}
+	items := tt.Menu()
+	if len(items) == 0 {
+		t.Fatal("the menu is empty")
+	}
+	if len(a.volumes) != want {
+		t.Errorf("opening the menu found %d drives, want %d", len(a.volumes), want)
+	}
+	for _, v := range a.volumes {
+		found := false
+		for _, it := range items {
+			if it == v.Friendly() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("volume %s is not in the menu: %v", v.Root, items)
+		}
+	}
+}
+
+// TestAnEmptyReadKeepsThePicker checks the guard: a failed enumeration must
+// not empty the picker and take the current target's name with it.
+func TestAnEmptyReadKeepsThePicker(t *testing.T) {
+	a := New(Settings{})
+	a.LoadVolumes()
+	if len(a.volumes) == 0 {
+		t.Skip("no volumes")
+	}
+	kept := len(a.volumes)
+
+	a.setVolumes(nil)
+	if len(a.volumes) != kept {
+		t.Errorf("an empty read emptied the picker: %d -> %d", kept, len(a.volumes))
+	}
+	if a.rootLabel() == "" {
+		t.Error("the target lost its name after an empty read")
+	}
+
+	// A read that genuinely finds drives replaces the list.
+	a.setVolumes(nil)
+	a.setVolumes([]disk.Volume{{Root: `Z:\`, Label: "Zed"}})
+	if len(a.volumes) != 1 {
+		t.Errorf("a real read did not replace the list: %d", len(a.volumes))
 	}
 }
