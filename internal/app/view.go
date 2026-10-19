@@ -6,19 +6,21 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
+
 	"sweep/internal/scan"
 )
 
 // Layout metrics. The window is a single column of cards sharing one
 // margin, so every card's edge lines up with every other's, and the
-// header and footer share it too.
+// header and footer share it too. Controls are Onevra's, which size
+// themselves from the theme.
 const (
-	pageMargin  = 20
-	pagePad     = 18
-	cardGap     = 14
-	cardPad     = 18
-	controlPad  = 7
-	controlPadH = 12
+	pageMargin = 20
+	pagePad    = 18
+	cardGap    = 14
+	cardPad    = 18
 )
 
 // viewFn builds the window from the app's state. It runs on the main
@@ -94,7 +96,7 @@ func (a *App) header(c *ui.Context) {
 	ui.Row(c).AlignItems(ui.Center).Gap(10).Padding(pageMargin, 13).
 		Background(t.Background).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).
 		Children(func() {
-			ui.Icon(c, iconDisk).Size(17, 17).TextColor(t.Accent)
+			components.Icon(c, lucide.HardDrive).Size(17, 17).TextColor(t.Accent)
 			ui.Text(c, "Sweep").FontSize(16).FontWeight(600).Shrink(0)
 			ui.Text(c, a.rootLabel()).FontSize(13).TextColor(t.TextMuted).
 				SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
@@ -111,7 +113,7 @@ func (a *App) header(c *ui.Context) {
 // mounted volume plus a folder of the user's own choosing.
 func (a *App) diskButton(c *ui.Context) {
 	label := "Scan"
-	b := ui.MenuButton(c, label, func(m *ui.Menu) {
+	b := components.Button(c, label, components.ButtonSecondary).Menu(func(m *ui.Menu) {
 		// The menu's build callback runs when the menu opens, which is the
 		// right moment to re-read the drives: a disk plugged in since
 		// launch appears here, and the cost is one enumeration per open
@@ -133,7 +135,7 @@ func (a *App) diskButton(c *ui.Context) {
 		if m.Item("Choose a folder…").Chosen() {
 			a.ChooseRoot()
 		}
-	}).Padding(controlPad, controlPadH)
+	})
 	b.Tooltip("Choose a disk or folder to scan")
 }
 
@@ -150,7 +152,7 @@ func (a *App) scanButton(c *ui.Context) {
 	if a.scanning {
 		label = "Scanning…"
 	}
-	b := ui.Button(c, label).Padding(controlPad, controlPadH).Disabled(a.scanning)
+	b := components.Button(c, label, components.ButtonSecondary).Disabled(a.scanning)
 	b.Tooltip("Search again for build output that can be removed")
 	if b.Clicked() {
 		a.StartScan()
@@ -162,25 +164,16 @@ func (a *App) scanButton(c *ui.Context) {
 // costs two presses for the same result. The icon shows the appearance in
 // use, so the button reads as a state rather than only as an action.
 func (a *App) themeButton(c *ui.Context) {
-	t := c.Theme()
 	dark := a.themeInit && a.theme
 	label := "Switch to the dark appearance"
-	icon := iconMoon
+	icon := lucide.Moon()
 	if dark {
 		label = "Switch to the light appearance"
-		icon = iconSun
+		icon = lucide.Sun()
 	}
-	b := ui.ButtonBase(c).Padding(controlPad, 9).Radius(8).Focusable().Shrink(0).
-		Background(t.Surface).Border(1, t.Border).
-		Label(label).Tooltip(label)
+	b := components.IconButton(c, icon, label, components.IconButtonPlain)
 	if b.Clicked() {
 		a.ToggleTheme()
-	}
-	b.Children(func() {
-		ui.Icon(c, icon).Size(14, 14)
-	})
-	if b.Hovered() {
-		b.Background(t.SurfaceHover)
 	}
 }
 
@@ -201,11 +194,12 @@ func (a *App) toolbar(c *ui.Context) {
 		})
 		ui.Spacer(c)
 		if len(a.found) > 0 {
-			ui.SearchField(c, &a.query).Width(200).Placeholder("Filter").
-				OnChange(a.refresh)
+			components.TextBox(c, &a.query, components.TextBoxOptions{LeadingIcon: lucide.Search()}).
+				Width(200).Placeholder("Filter").OnChange(a.refresh)
 		}
-		seg := ui.Segmented(c, &a.viewIdx, "Map", "List").Label("View")
-		if seg.Changed() {
+		tabs := components.Tabs(c, &a.viewIdx, components.TabsSegmented, "Map", "List")
+		tabs.List.Label("View")
+		if tabs.List.Changed() {
 			a.saveSettings()
 		}
 	})
@@ -226,17 +220,30 @@ func (a *App) empty(c *ui.Context) {
 		title = "The scan failed"
 		detail = a.lastErr.Error()
 	}
+	// Each state gets the glyph that answers it: a failed search when the
+	// scan failed, a moving circle while scanning, and an open box when
+	// there is simply nothing to reclaim.
+	var icon *ui.SVG
+	color := t.Success
+	switch {
+	case a.scanning:
+		icon, color = lucide.LoaderCircle(), t.TextMuted
+	case a.lastErr != nil:
+		icon, color = lucide.SearchX(), t.Danger
+	default:
+		icon = lucide.PackageOpen()
+	}
 	ui.Column(c).Padding(cardPad, 44).Gap(10).Center().Radius(t.Radius).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
-		ui.Icon(c, iconCheck).Size(26, 26).TextColor(t.Success)
+		components.Icon(c, icon).Size(26, 26).TextColor(color)
 		ui.Text(c, title).FontSize(16).FontWeight(600)
 		ui.Text(c, detail).FontSize(13).TextColor(t.TextMuted).TextAlign(ui.Center)
 		ui.Row(c).Gap(8).Margin(0, 8, 0, 0).Children(func() {
-			if b := ui.Button(c, "Choose a folder…"); b.Clicked() {
+			if b := components.Button(c, "Choose a folder…", components.ButtonSecondary); b.Clicked() {
 				a.ChooseRoot()
 			}
 			if len(a.roots) > 0 {
-				if b := ui.Button(c, "Use my home folder"); b.Clicked() {
+				if b := components.Button(c, "Use my home folder", components.ButtonGhost); b.Clicked() {
 					a.ResetRoot()
 				}
 			}

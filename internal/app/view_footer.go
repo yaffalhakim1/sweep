@@ -5,6 +5,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/oneo-me/onevra/source/components"
+
 	"sweep/internal/scan"
 )
 
@@ -42,14 +44,14 @@ func (a *App) footer(c *ui.Context) {
 			// Reveal is offered only for a single choice, because the
 			// system's file manager can only show one thing.
 			if path, ok := a.revealTarget(); ok {
-				b := ui.Button(c, "Reveal").Padding(controlPad, controlPadH)
+				b := components.Button(c, "Reveal", components.ButtonSecondary)
 				b.Tooltip("Show this folder in the file manager")
 				if b.Clicked() {
 					a.Reveal(path)
 				}
 			}
 
-			clean := ui.PrimaryButton(c, "Remove…").Padding(controlPad, controlPadH)
+			clean := components.Button(c, "Remove…", components.ButtonPrimary)
 			clean.Disabled(len(chosen) == 0)
 			clean.Tooltip(cleanTooltip(len(chosen), total))
 			if clean.Clicked() && len(chosen) > 0 {
@@ -119,12 +121,15 @@ func (a *App) confirmDialog(c *ui.Context, chosen []scan.Artifact, total int64) 
 	if !a.confirm {
 		return
 	}
-	title := fmt.Sprintf("Remove %s?", countLabel(len(chosen)))
-	message := fmt.Sprintf("This permanently deletes %s of build output from %d folders. "+
-		"Your source code is not touched, but the next build will take longer.",
-		scan.HumanBytes(total), len(chosen))
-	choice := ui.AlertDialog(c, &a.confirm, title, message, "Cancel", "Remove")
-	if choice == 1 {
+	result := components.AlertDialog(c, &a.confirm, components.AlertDialogOptions{
+		Title: fmt.Sprintf("Remove %s?", countLabel(len(chosen))),
+		Message: fmt.Sprintf("This permanently deletes %s of build output from %d folders. "+
+			"Your source code is not touched, but the next build will take longer.",
+			scan.HumanBytes(total), len(chosen)),
+		ConfirmLabel: "Remove",
+		CancelLabel:  "Cancel",
+	})
+	if result == components.DialogConfirmed {
 		a.Clean()
 	}
 }

@@ -3,6 +3,8 @@ package app
 import (
 	"github.com/egoist/mygo/ui"
 
+	"github.com/oneo-me/onevra/source/components"
+
 	"sweep/internal/scan"
 )
 
@@ -35,10 +37,10 @@ func (a *App) listView(c *ui.Context) {
 			ui.Text(c, "largest first, grouped by build system").
 				FontSize(12).TextColor(t2(c))
 			ui.Spacer(c)
-			if b := ui.Button(c, "Select all").Padding(5, 10); b.Clicked() {
+			if b := components.Button(c, "Select all", components.ButtonGhost); b.Clicked() {
 				a.SelectAll()
 			}
-			if b := ui.Button(c, "None").Padding(5, 10); b.Clicked() {
+			if b := components.Button(c, "None", components.ButtonGhost); b.Clicked() {
 				a.ClearSelection()
 			}
 		})
