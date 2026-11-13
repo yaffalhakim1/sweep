@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-scale="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#171916">
+<title>Sweep · scanning state · dot matrix lab</title>
+<style>
+  /* Same palette as internal/app/theme.go, so the card in this lab is the card
+     in the app. Nothing here is a new colour. */
+  :root {
+    --canvas: #171916;
+    --surface: #212420;
+    --inset: #31362f;
+    --border: #3a4038;
+    --text: #ecede8;
+    --muted: #a8aca3;
+    --lit: #6fbf9a;
+    --dim: .12;
+
+    --dot: calc(var(--unit-dot) * var(--mult, 1));
+    --pitch: calc(var(--unit-pitch) * var(--mult, 1));
+    --gap: calc(var(--pitch) - var(--dot));
+
+    --unit-dot: 3.6px;
+    --unit-pitch: 8px;
+
+    --ease-out: cubic-bezier(.23, 1, .32, 1);
+  }
+
+  [data-theme="light"] {
+    --canvas: #f7f7f4;
+    --surface: #ffffff;
+    --inset: #efefea;
+    --border: #e2e2d9;
+    --text: #1e211c;
+    --muted: #63655d;
+    --lit: #1e3a2f;
+    --dim: .16;
+  }
+
+  [data-scale="2"] {
+    --mult: 2;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  html, body { margin: 0; }
+
+  body {
+    background: var(--canvas);
+    color: var(--text);
+    font: 400 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+  }
+
+  /* ── Top bar ───────────────────────────────────────────────────────── */
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    /* No backdrop blur: a blurred bar over five animated fields is the most
+       expensive thing on this page, and on a phone it is the first to drop. */
+    background: var(--canvas);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .bar__id { display: flex; gap: 10px; align-items: center; }
+
+  .mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--lit);
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+
+  .mark::after {
+    content: "";
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    background: var(--surface);
+  }
+
+  .bar h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
+  .bar p { margin: 1px 0 0; font-size: 12px; color: var(--muted); }
+
+  .bar__controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .seg {
+    display: flex;
+    padding: 2px;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  .seg button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background-color 120ms ease, color 120ms ease, transform 120ms var(--ease-out);
+  }
+
+  .seg button:active { transform: scale(.96); }
+
+  .seg button:hover { color: var(--text); }
+
+  .seg button[aria-pressed="true"] {
+    background: var(--inset);
+    color: var(--text);
+  }
+
+  .pill {
+    appearance: none;
+    font: inherit;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background-color 120ms ease, transform 120ms var(--ease-out);
+  }
+
+  .pill:active { transform: scale(.97); }
+
+  .pill:hover { background: var(--inset); }
+  .pill[aria-pressed="true"] { background: var(--inset); border-color: color-mix(in oklab, var(--lit) 45%, transparent); }
+  button:focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
+
+  /* ── The five cards ────────────────────────────────────────────────── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 20px 24px;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .cell { display: flex; flex-direction: column; gap: 12px; }
+
+  /* The recommendation takes the whole first row, so the eye lands on it
+     before comparing the four alternatives. */
+  .cell--lead { grid-column: 1 / -1; }
+  .cell--lead .card { padding: 38px 24px; }
+  .cell--lead .cell__meta p { max-width: 62ch; }
+
+  .cell__meta h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cell__meta p { margin: 2px 0 0; font-size: 12px; color: var(--muted); max-width: 44ch; }
+
+  .tag {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .02em;
+    padding: 2px 6px;
+    border-radius: 999px;
+    color: var(--lit);
+    border: 1px solid color-mix(in oklab, var(--lit) 40%, transparent);
+  }
+
+  /* The empty state from view_pages.go: one centred column on a raised card. */
+  .card {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 26px 24px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    text-align: center;
+  }
+
+  .title { margin: 0; font-size: 15px; font-weight: 600; }
+
+  .detail {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Dot field ─────────────────────────────────────────────────────── */
+  .matrix {
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 22), var(--dot));
+    grid-auto-rows: var(--dot);
+    gap: var(--gap);
+    justify-content: center;
+  }
+
+  .dot {
+    width: var(--dot);
+    height: var(--dot);
+    border-radius: 50%;
+    background: var(--lit);
+    opacity: var(--dim);
+    transform: scale(.85);
+  }
+
+  /* Only opacity and transform animate, so every dot stays on the compositor.
+     The delay and duration are set per dot by the script below; the curves
+     live here because each idea is a different shape, not a different speed. */
+  @media (prefers-reduced-motion: no-preference) {
+    .dot {
+      animation-timing-function: linear;
+      animation-iteration-count: infinite;
+    }
+
+    [data-variant="sweep"] .dot      { animation-name: sweep; }
+    [data-variant="serpentine"] .dot { animation-name: serpentine; }
+    [data-variant="sonar"] .dot      { animation-name: sonar; }
+    [data-variant="tide"] .dot       { animation-name: tide; }
+    [data-variant="chatter"] .dot    { animation-name: chatter; }
+  }
+
+  /* Reduced motion keeps the state readable: a sparse static field instead of
+     a moving one. No movement, no flashing. */
+  @media (prefers-reduced-motion: reduce) {
+    .dot:nth-child(11n + 3) { opacity: .5; }
+    .dot:nth-child(17n + 8) { opacity: .3; }
+  }
+
+  body.paused .dot { animation-play-state: paused; }
+
+  /* A phone shows one card at a time, so the other four stop working instead
+     of animating off screen. This is the difference between five fields and
+     one field of work. */
+  .cell.is-idle .dot { animation-play-state: paused; }
+
+  @keyframes sweep {
+    0%   { opacity: var(--dim); transform: scale(.85); }
+    2%   { opacity: 1;          transform: scale(1.35); }
+    6%   { opacity: 1;          transform: scale(1.35); }
+    18%  { opacity: var(--dim); transform: scale(.85); }
+    100% { opacity: var(--dim); transform: scale(.85); }
+  }
+
+  @keyframes serpentine {
+    0%   { opacity: var(--dim); transform: scale(.9); }
+    1.2% { opacity: 1;          transform: scale(1.3); }
+    2.6% { opacity: 1;          transform: scale(1.3); }
+    7%   { opacity: var(--dim); transform: scale(.9); }
+    100% { opacity: var(--dim); transform: scale(.9); }
+  }
+
+  @keyframes sonar {
+    0%   { opacity: var(--dim); transform: scale(.85); }
+    2%   { opacity: 1;          transform: scale(1.35); }
+    6%   { opacity: 1;          transform: scale(1.35); }
+    22%  { opacity: var(--dim); transform: scale(.85); }
+    100% { opacity: var(--dim); transform: scale(.85); }
+  }
+
+  @keyframes tide {
+    0%   { opacity: var(--dim); transform: scale(.9); }
+    42%  { opacity: 1;          transform: scale(1.2); }
+    52%  { opacity: 1;          transform: scale(1.2); }
+    100% { opacity: var(--dim); transform: scale(.9); }
+  }
+
+  @keyframes chatter {
+    0%, 100% { opacity: var(--dim); }
+    22%      { opacity: .62; }
+    44%      { opacity: var(--dim); }
+    66%      { opacity: .42; }
+    84%      { opacity: var(--dim); }
+  }
+
+  /* ── Note ──────────────────────────────────────────────────────────── */
+  .note {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 4px 24px 40px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .note code {
+    font: 11px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--inset);
+    color: var(--text);
+  }
+
+  /* A phone is where this gets judged, so the field shrinks its unit rather
+     than overflowing the card. Two steps, because 22 columns at 2x is 281px
+     at the first step and 246px at the second: both fit a 360px screen. */
+  @media (max-width: 560px) {
+    :root {
+      --unit-dot: 3px;
+      --unit-pitch: 6.4px;
+    }
+
+    .bar {
+      padding: 10px max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
+      gap: 10px;
+    }
+    .bar__controls { gap: 6px; }
+    .bar p { font-size: 11px; }
+    .grid { padding: 16px; gap: 18px; }
+    .card { padding: 22px 12px; }
+    .cell--lead .card { padding: 28px 12px; }
+    .note { padding: 4px 16px calc(40px + env(safe-area-inset-bottom)); }
+  }
+
+  @media (max-width: 400px) {
+    :root {
+      --unit-dot: 2.6px;
+      --unit-pitch: 5.6px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar__id">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <h1>Sweep · scanning state</h1>
+      <p>One card, five dot matrices. Nothing else changes.</p>
+    </div>
+  </div>
+  <div class="bar__controls">
+    <div class="seg" role="group" aria-label="Appearance">
+      <button type="button" data-theme-btn="light">Light</button>
+      <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+    </div>
+    <div class="seg" role="group" aria-label="Dot size">
+      <button type="button" data-scale-btn="1" aria-pressed="true">1&times;</button>
+      <button type="button" data-scale-btn="2" aria-pressed="false">2&times;</button>
+    </div>
+    <button type="button" class="pill" id="speed" aria-pressed="false">Slow&nbsp;motion</button>
+    <button type="button" class="pill" id="pause">Pause</button>
+  </div>
+</header>
+
+<main class="grid">
+
+  <section class="cell cell--lead" data-variant="sweep">
+    <div class="cell__meta">
+      <h2>Sweep <span class="tag">Recommended</span></h2>
+      <p>A band crosses the field left to right and the trail fades. The field is never empty, so it reads as a scanner passing over something, not as a spinner.</p>
+    </div>
+    <div class="card">
+      <div class="matrix" aria-hidden="true"></div>
+      <p class="title">Scanning…</p>
+      <p class="detail">1,204 folders read, 3 found so far.</p>
+    </div>
+  </section>
+
+  <section class="cell" data-variant="serpentine">
+    <div class="cell__meta">
+      <h2>Serpentine</h2>
+      <p>Dots light in reading order, one after another, and fade behind the head. Reads as "one folder at a time", which is what the walk actually does.</p>
+    </div>
+    <div class="card">
+      <div class="matrix" aria-hidden="true"></div>
+      <p class="title">Scanning…</p>
+      <p class="detail">1,204 folders read, 3 found so far.</p>
+    </div>
+  </section>
+
+  <section class="cell" data-variant="sonar">
+    <div class="cell__meta">
+      <h2>Sonar</h2>
+      <p>A ring leaves the centre and fades out, then rests. Slowest of the five, and the quietest: it reads as listening rather than working.</p>
+    </div>
+    <div class="card">
+      <div class="matrix" aria-hidden="true"></div>
+      <p class="title">Scanning…</p>
+      <p class="detail">1,204 folders read, 3 found so far.</p>
+    </div>
+  </section>
+
+  <section class="cell" data-variant="tide">
+    <div class="cell__meta">
+      <h2>Tide</h2>
+      <p>A diagonal crest travels across the field with no seam and no rest. Calm and continuous, but it says less than the sweep does.</p>
+    </div>
+    <div class="card">
+      <div class="matrix" aria-hidden="true"></div>
+      <p class="title">Scanning…</p>
+      <p class="detail">1,204 folders read, 3 found so far.</p>
+    </div>
+  </section>
+
+  <section class="cell" data-variant="chatter">
+    <div class="cell__meta">
+      <h2>Chatter</h2>
+      <p>Sparse dots blink at half brightness at uneven rates, like data landing. Closest to the real read cost, the most likely to feel noisy after a minute.</p>
+    </div>
+    <div class="card">
+      <div class="matrix" aria-hidden="true"></div>
+      <p class="title">Scanning…</p>
+      <p class="detail">1,204 folders read, 3 found so far.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="note">
+  Only <code>opacity</code> and <code>transform</code> animate, so each dot stays on the
+  compositor. Delays are fixed per dot before the first frame; nothing moves them
+  afterwards. With <code>prefers-reduced-motion</code> the field holds a static pattern
+  instead of moving. The real card also carries a “Choose a folder…” button below the line.
+</footer>
+
+<script>
+  const FIELD = { cols: 22, rows: 7 };
+
+  // Each idea is a phase map: the position of a dot in the cycle, 0 to 1.
+  // The dot's brightness curve lives in CSS; this decides only when it fires.
+  function phaseOf(variant, col, row) {
+    const { cols, rows } = FIELD;
+    switch (variant) {
+      case 'sweep':
+        // Divided by cols, not cols - 1: the last column then sits one step
+        // before the first, so the band wraps without lighting both edges.
+        return col / cols;
+      case 'serpentine':
+        // 0.82 rather than 1 leaves a short rest before the head returns.
+        return (row * cols + col) / (cols * rows - 1) * 0.82;
+      case 'sonar': {
+        const cx = (cols - 1) / 2;
+        const cy = (rows - 1) / 2;
+        const far = Math.hypot(cx, cy);
+        return Math.hypot(col - cx, row - cy) / far * 0.55;
+      }
+      case 'tide':
+        return (col + row) / (cols + rows);
+      default:
+        return Math.random();
+    }
+  }
+
+  const CYCLE = { sweep: 1.7, serpentine: 2.6, sonar: 2.2, tide: 2.8 };
+
+  function buildField(el, variant) {
+    const { cols, rows } = FIELD;
+    const cycle = CYCLE[variant] ?? 1;
+    const frag = document.createDocumentFragment();
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const dot = document.createElement('i');
+        dot.className = 'dot';
+
+        if (variant === 'chatter') {
+          // More than half the dots stay dark: a field where everything moves
+          // reads as noise instead of as a disk being read.
+          if (Math.random() < 0.55) { frag.appendChild(dot); continue; }
+          dot.style.animationDuration = (0.8 + Math.random() * 0.9).toFixed(2) + 's';
+          dot.style.animationDelay = (-Math.random() * 1.7).toFixed(2) + 's';
+        } else {
+          const phase = phaseOf(variant, col, row);
+          dot.style.animationDuration = cycle + 's';
+          dot.style.animationDelay = (-phase * cycle).toFixed(3) + 's';
+        }
+        frag.appendChild(dot);
+      }
+    }
+
+    el.style.setProperty('--cols', cols);
+    el.appendChild(frag);
+  }
+
+  document.querySelectorAll('[data-variant]').forEach((cell) => {
+    const field = cell.querySelector('.matrix');
+    if (field) buildField(field, cell.dataset.variant);
+  });
+
+  // Only the cards on screen animate. A phone renders one at a time, so this
+  // removes four fifths of the work without changing what you see.
+  const idle = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      entry.target.classList.toggle('is-idle', !entry.isIntersecting);
+    });
+  }, { rootMargin: '120px' });
+
+  document.querySelectorAll('.cell').forEach((cell) => idle.observe(cell));
+
+  // ── Controls ────────────────────────────────────────────────────────
+  function press(attr, value) {
+    document.querySelectorAll('[' + attr + ']').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b.getAttribute(attr) === value));
+    });
+  }
+
+  function setTheme(value) {
+    document.documentElement.dataset.theme = value;
+    press('data-theme-btn', value);
+  }
+
+  function setScale(value) {
+    document.documentElement.dataset.scale = value;
+    press('data-scale-btn', value);
+  }
+
+  document.querySelectorAll('[data-theme-btn]').forEach((b) => {
+    b.addEventListener('click', () => setTheme(b.dataset.themeBtn));
+  });
+
+  document.querySelectorAll('[data-scale-btn]').forEach((b) => {
+    b.addEventListener('click', () => setScale(b.dataset.scaleBtn));
+  });
+
+  // ?theme=light and ?scale=2 make a state linkable without clicking twice.
+  const query = new URLSearchParams(location.search);
+  if (query.has('theme')) setTheme(query.get('theme'));
+  if (query.has('scale')) setScale(query.get('scale'));
+
+  const pause = document.getElementById('pause');
+  pause.addEventListener('click', () => {
+    const paused = document.body.classList.toggle('paused');
+    // Label changes, so aria-pressed stays off: a pressed "Play" is nonsense.
+    pause.textContent = paused ? 'Play' : 'Pause';
+  });
+
+  // Time-scale has no CSS switch, so the clock itself is slowed. This is the
+  // only way to see what a 70ms band actually does frame by frame.
+  const speed = document.getElementById('speed');
+  let slow = false;
+  speed.addEventListener('click', () => {
+    slow = !slow;
+    document.getAnimations().forEach((a) => { a.playbackRate = slow ? 0.25 : 1; });
+    speed.setAttribute('aria-pressed', String(slow));
+  });
+
+  // ── Live counter, so the detail line is the real one ─────────────────
+  let visited = 1204;
+  let found = 3;
+  const details = [...document.querySelectorAll('.detail')];
+  setInterval(() => {
+    visited += 40 + Math.floor(Math.random() * 120);
+    if (Math.random() < 0.25) found += 1;
+    const line = visited.toLocaleString('en-US') + ' folders read, ' + found + ' found so far.';
+    details.forEach((d) => { d.textContent = line; });
+  }, 200);
+</script>
+
+</body>
+</html>

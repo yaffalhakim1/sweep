@@ -225,37 +225,77 @@ ul { margin: 0; padding: 0; list-style: none; }
   color: var(--color-ink-4);
 }
 
-/* ── Mono block · no drawn window chrome ────────────────────── */
-.term {
-  background: var(--color-graphite);
-  border: var(--rule-hair) solid var(--color-graphite-rule);
+/* ── The disk, in dots · the hero's visual ──────────────────── */
+/* One dot per gigabyte of the scanned volume, with the build output
+   coloured. It is the app's own motif — the field it draws while it
+   scans — and it says the product in one glance: a large disk, a small
+   part of it reclaimable, and that part spread across seven systems. */
+.disk {
+  margin: 0;
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  padding: var(--space-md);
   box-shadow: var(--shadow-lift);
 }
-.term__cap {
+.disk__cap {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-on-graphite-2);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: var(--rule-hair) solid var(--color-graphite-rule);
+  color: var(--color-ink-4);
+  margin-bottom: var(--space-sm);
 }
-.term__body {
-  margin: 0;
-  padding: var(--space-md);
-  font-family: var(--font-mono);
+.disk__field {
+  display: grid;
+  grid-template-columns: repeat(34, minmax(0, 1fr));
+  gap: 3px;
+}
+.disk__field i {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--color-rule-strong);
+}
+.disk__field i[data-k] { background: var(--dot-hue); }
+/* Found, one after another in reading order: the reclaimable part of the
+   disk is the part that arrives. It runs once, so the field settles instead
+   of pulsing at the reader for as long as the page is open. */
+.reveal.is-in .disk__field i[data-k] {
+  animation: found 0.55s var(--ease-out) both;
+  animation-delay: calc(var(--i) * 55ms);
+}
+@keyframes found {
+  from { opacity: 0.2; transform: scale(0.55); }
+  to   { opacity: 1;   transform: scale(1); }
+}
+.disk__foot {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: var(--rule-hair) solid var(--color-rule);
   font-size: var(--text-xs);
-  line-height: 1.75;
-  color: var(--color-on-graphite);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  color: var(--color-ink-3);
+  max-width: 48ch;
 }
-.term__body .dim { color: var(--color-on-graphite-2); }
-.term__body .acc { color: var(--color-syn-acc); }
-.term__body .ok  { color: var(--color-found); }
-.term__body .num { color: var(--color-warn); }
+.disk__foot b { color: var(--color-ink); font-weight: 600; }
+.disk__note { display: block; margin-top: var(--space-2xs); color: var(--color-ink-4); }
+
+/* ── Removal progress, in dots · the paragraph's figure ─────── */
+.prog { margin-top: var(--space-md); max-width: 46ch; }
+.prog__lead {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  color: var(--color-ink-4);
+  margin-bottom: var(--space-xs);
+}
+.prog__row { display: grid; grid-template-columns: repeat(44, minmax(0, 1fr)); gap: 3px; }
+.prog__row i { aspect-ratio: 1; border-radius: 50%; background: var(--color-rule-strong); }
+.prog__row i.is-done { background: var(--color-accent); }
+.prog__row i.is-next { background: color-mix(in oklab, var(--color-accent) 65%, var(--color-rule-strong)); }
 
 /* ── Screenshots · real capture, hairline only ──────────────── */
 .shot { margin: 0; }
@@ -482,6 +522,13 @@ ul { margin: 0; padding: 0; list-style: none; }
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  /* The dot field must not inherit the near-zero duration above: an infinite
+     animation at 0.01ms would strobe. It holds still instead. */
+  .disk__field i[data-k] {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 /* ── Reduced transparency ───────────────────────────────────── */
@@ -540,20 +587,18 @@ ul { margin: 0; padding: 0; list-style: none; }
       <p class="hero__meta">Pure Go · no runtime · one 11 MB binary · 42 folders across 7 build systems</p>
     </div>
 
-    <div class="term">
-      <div class="term__cap">sweep · real scan, C:\Users\…\Documents</div>
-      <pre class="term__body"><code><span class="dim">$</span> sweep --scan
-<span class="dim">scanning 1 root · 42 build directories</span>
-
- <span class="num">15.5 GB</span>  <span class="acc">Node</span>    …\rust\waku\node_modules
-  <span class="num">5.7 GB</span>  <span class="acc">Rust</span>    …\rust\kaku-gui\target
-  <span class="num">2.3 GB</span>  <span class="acc">Node</span>    …\lxp-v2-frontend-nextjs\.next
-  <span class="num">1.4 GB</span>  <span class="acc">Node</span>    …\clicky-frontend-nextjs\.next
-<span class="dim">  … 38 more</span>
-
-<span class="ok">22.1 GB reclaimable · 42 folders · 3.7s</span>
-<span class="dim">C:\ 35.1 GB free of 476 GB — 92.6% full</span></code></pre>
-    </div>
+    <figure class="disk reveal">
+      <div class="disk__cap">
+        <span>C: · 476 GB</span>
+        <span>one dot per gigabyte</span>
+      </div>
+      <div class="disk__field" id="disk-field" aria-hidden="true"></div>
+      <figcaption class="disk__foot">
+        <b>22 dots are build output</b> — Node, Rust, Python, JVM, Xcode, CMake
+        and .NET. The rest is the disk they sit on.
+        <span class="disk__note">42 folders, found in 3.7 seconds.</span>
+      </figcaption>
+    </figure>
   </div>
 </section>
 
@@ -594,9 +639,9 @@ ul { margin: 0; padding: 0; list-style: none; }
         <button type="button" id="sw-dark" aria-pressed="false">Dark</button>
       </div>
       <div class="shot__frame shots">
-        <img id="shot-light" src="assets/screenshot-light.png" width="980" height="720"
+        <img id="shot-light" src="assets/screenshot-light.png" width="1180" height="800"
              alt="Sweep in the light appearance: a capacity meter showing the disk 92.6% full, a squarified treemap of build directories coloured by build system, and a footer totalling the two chosen folders.">
-        <img id="shot-dark" src="assets/screenshot-dark.png" width="980" height="720" hidden
+        <img id="shot-dark" src="assets/screenshot-dark.png" width="1180" height="800" hidden
              alt="The same view in the dark appearance.">
       </div>
       <figcaption class="shot__cap">
@@ -636,6 +681,10 @@ ul { margin: 0; padding: 0; list-style: none; }
             and the action is withdrawn until it finishes, so a second removal
             cannot start underneath it.
           </p>
+          <div class="prog">
+            <span class="prog__lead">Removing 6 of 28…</span>
+            <div class="prog__row" data-prog="28,6" aria-hidden="true"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -748,7 +797,7 @@ ul { margin: 0; padding: 0; list-style: none; }
     </div>
     <figure class="shot reveal">
       <div class="shot__frame">
-        <img src="assets/screenshot-list.png" width="980" height="720" loading="lazy"
+        <img src="assets/screenshot-list.png" width="1180" height="800" loading="lazy"
              alt="Sweep's list view: build directories grouped under Rust, Node, Python and CMake headings, each row showing its path, when it last changed, its size, and a checkbox.">
       </div>
       <figcaption class="shot__cap">
@@ -876,6 +925,69 @@ ul { margin: 0; padding: 0; list-style: none; }
 </footer>
 
 <script>
+/* The disk in dots: one dot per gigabyte of the scanned volume, with the
+   22.1 GB of build output coloured. The clusters are placed by hand, so the
+   picture reads the same on every load, at every width, and in every
+   screenshot. */
+(function () {
+  var field = document.getElementById('disk-field');
+  if (!field) return;
+
+  var COLS = 34;
+  var GB = 476;
+  // The build output, 22 dots in all, as small blocks the way the map draws
+  // projects: node is the largest, the rest trail off beside it.
+  var CLUSTERS = [
+    { kind: 'node', count: 11, at: [2, 7], wide: 6 },
+    { kind: 'rust', count: 4, at: [7, 24], wide: 2 },
+    { kind: 'python', count: 2, at: [4, 33], wide: 1 },
+    { kind: 'cmake', count: 2, at: [9, 15], wide: 2 },
+    { kind: 'jvm', count: 1, at: [5, 21], wide: 1 },
+    { kind: 'dotnet', count: 1, at: [10, 30], wide: 1 },
+    { kind: 'xcode', count: 1, at: [1, 27], wide: 1 }
+  ];
+
+  var kinds = new Array(GB);
+  CLUSTERS.forEach(function (c) {
+    for (var i = 0; i < c.count; i++) {
+      var row = c.at[0] + Math.floor(i / c.wide);
+      var col = c.at[1] + (i % c.wide);
+      kinds[row * COLS + col] = c.kind;
+    }
+  });
+
+  var frag = document.createDocumentFragment();
+  var found = 0;
+  for (var n = 0; n < GB; n++) {
+    var dot = document.createElement('i');
+    var kind = kinds[n];
+    if (kind) {
+      dot.dataset.k = kind;
+      dot.style.setProperty('--dot-hue', 'var(--dot-' + kind + ')');
+      dot.style.setProperty('--i', found++);
+    }
+    frag.appendChild(dot);
+  }
+  field.appendChild(frag);
+})();
+
+/* The removal row: the dots the app's footer draws while it deletes. */
+(function () {
+  var row = document.querySelector('.prog__row');
+  if (!row) return;
+  var parts = (row.dataset.prog || '44,10').split(',');
+  var cols = Number(parts[0]) || 44;
+  var done = Number(parts[1]) || 0;
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < cols; i++) {
+    var dot = document.createElement('i');
+    if (i < done) dot.className = 'is-done';
+    else if (i === done) dot.className = 'is-next';
+    frag.appendChild(dot);
+  }
+  row.appendChild(frag);
+})();
+
 /* Appearance switch — swaps between two real captures. */
 (function () {
   var light = document.getElementById('shot-light');

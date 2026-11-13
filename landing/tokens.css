@@ -42,6 +42,18 @@
   --color-on-graphite:    oklch(93% 0.008 255);
   --color-on-graphite-2:  oklch(72% 0.012 256);
 
+  /* ── Categorical · the disk in dots ─────────────────────────── */
+  /* The build-system hues, as the app's own map uses them. They are held at
+     a mid lightness so seven stay apart as dots a few pixels wide, and they
+     are data colours, never ink: no text is drawn in them. */
+  --dot-node:   oklch(66% 0.12 82);
+  --dot-rust:   oklch(60% 0.15 42);
+  --dot-python: oklch(52% 0.17 20);
+  --dot-jvm:    oklch(48% 0.10 310);
+  --dot-xcode:  oklch(52% 0.05 62);
+  --dot-cmake:  oklch(45% 0.02 250);
+  --dot-dotnet: oklch(52% 0.13 350);
+
   /* ── Semantic ───────────────────────────────────────────────── */
   /* Syntax tones inside the terminal block. */
   --color-syn-acc: oklch(76% 0.16 256);

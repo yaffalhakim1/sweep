@@ -14,8 +14,7 @@ import (
 	"sweep/internal/scan"
 )
 
-// homeDir is the directory a scan looks at when the user has not chosen
-// one.
+// homeDir is the directory a scan looks at when the user has not chosen one.
 func homeDir() (string, error) { return os.UserHomeDir() }
 
 // missingRoots returns the roots that are not directories, so a scan can
@@ -31,15 +30,24 @@ func missingRoots(roots []string) []string {
 	return missing
 }
 
-// View is which of the two presentations of the same data is showing.
-type View int
+// Page is which page of the window is showing. The sidebar owns the choice;
+// each page is a different question about the same scan.
+type Page int
 
 const (
-	// ViewMap is the treemap: where the space went.
-	ViewMap View = iota
-	// ViewList is the grouped list: what to do about it.
-	ViewList
+	// PageArtifacts is the list: what was found and what to remove.
+	PageArtifacts Page = iota
+	// PageMap is the treemap: where the space went.
+	PageMap
+	// PageCaches is the subset of artifacts that are caches rather than
+	// build output.
+	PageCaches
+	// PageSettings is the rule table, the scan target and the appearance.
+	PageSettings
 )
+
+// pageKeys are the pages in the order the sidebar lists them.
+var pageKeys = []Page{PageMap, PageArtifacts, PageCaches, PageSettings}
 
 // App is the window's state. The view builds the interface from it on the
 // main thread; a background scan changes it through Window.Update.
@@ -47,9 +55,9 @@ type App struct {
 	win *mygo.Window
 
 	// found is every artifact of the last completed scan; shown is that
-	// list filtered by the query. During a scan, foundSoFar and visited
-	// report its progress, so the window shows it working instead of
-	// waiting silently.
+	// list after the query and the minimum size. During a scan, foundSoFar
+	// and visited report its progress, so the window shows it working
+	// instead of waiting silently.
 	found      []scan.Artifact
 	shown      []scan.Artifact
 	foundSoFar int
@@ -59,9 +67,15 @@ type App struct {
 	selected map[string]bool
 
 	query string
-	// viewIdx is bound to the segmented control, which writes the chosen
-	// segment into it; view() reads it as the app's own type.
-	viewIdx int
+	// minSize is the smallest artifact the list shows, in bytes. It is the
+	// filter that matters most on a disk with hundreds of small caches:
+	// nothing under a few hundred megabytes is worth a click.
+	minSize int64
+	// kindFilter narrows the list to one build system, or "" for all.
+	kindFilter scan.Kind
+
+	// page is the sidebar's current choice.
+	page Page
 
 	// roots is where to scan. Empty means the user's home, which the app
 	// resolves at scan time rather than storing a machine-specific path.
@@ -124,20 +138,45 @@ type App struct {
 	// mapBox is the treemap's element, kept so its committed geometry can
 	// be read for hit testing after the draw pass.
 	mapBox ui.Handle
+	// mapZoom is how many projects the map shows, as an index into
+	// mapZoomSteps; mapSelected is the project whose inspector is open.
+	mapZoom     int
+	mapSelected string
 	// mapCache is the laid-out treemap, kept so the layout runs when the
 	// data or the box changes rather than on every pointer move.
 	mapCache mapCache
+	// mapRoom is the height the partition box had last frame, which the next
+	// frame's layout is built for. The card grows into whatever the page
+	// leaves, so only the committed height says how tall the map really is.
+	mapRoom float32
 	// list is the artifact list's scroll and identity state, which MyGo
 	// keeps between frames.
 	list ui.ListState
+	// order is the column layout and sort order of the artifact table.
+	order tableState
+	// tableRows are the rows the list is showing, rebuilt when the data or
+	// the sort changes rather than on every frame.
+	tableRows []artifactRow
+	// tableKey is what tableRows was built from, so a rebuild is cheap to
+	// detect.
+	tableKey string
 }
 
 // New returns an app ready to be shown, with the remembered choices.
 func New(s Settings) *App {
 	a := &App{
 		selected: map[string]bool{},
-		viewIdx:  s.View,
+		page:     Page(s.Page),
 		roots:    s.Roots,
+		minSize:  defaultMinSize,
+	}
+	// A remembered threshold is the user's own choice; a first run starts at
+	// the default, which hides the long tail of small caches.
+	if s.MinSize != nil {
+		a.minSize = *s.MinSize
+	}
+	if a.page < PageArtifacts || a.page > PageSettings {
+		a.page = PageArtifacts
 	}
 	// A remembered appearance is the user's own choice, so it wins over the
 	// desktop's from the first frame.
@@ -146,14 +185,6 @@ func New(s Settings) *App {
 		a.themeInit = true
 	}
 	return a
-}
-
-// view is which presentation of the data is showing.
-func (a *App) view() View {
-	if a.viewIdx == int(ViewList) {
-		return ViewList
-	}
-	return ViewMap
 }
 
 // SetWindow records the window the app draws into.
@@ -289,9 +320,32 @@ func (a *App) pruneSelection() {
 	}
 }
 
-// refresh applies the query to the last scan.
+// refresh applies the query, the kind filter and the minimum size to the last
+// scan. Everything the pages show comes from shown, so the filters hold
+// across all of them.
 func (a *App) refresh() {
-	a.shown = scan.Filter(a.found, a.query)
+	shown := scan.Filter(a.found, a.query)
+	if a.kindFilter != "" {
+		byKind := shown[:0:0]
+		for _, art := range shown {
+			if art.Kind == a.kindFilter {
+				byKind = append(byKind, art)
+			}
+		}
+		shown = byKind
+	}
+	if a.minSize > 0 {
+		large := shown[:0:0]
+		for _, art := range shown {
+			if art.Bytes >= a.minSize {
+				large = append(large, art)
+			}
+		}
+		shown = large
+	}
+	a.shown = shown
+	// The rows are derived from shown, so they cannot outlive it.
+	a.tableKey = ""
 }
 
 // rootPath is the path a scan actually reads, resolving the default to the

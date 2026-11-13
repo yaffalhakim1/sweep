@@ -15,10 +15,14 @@ type Settings struct {
 	// Dark is the appearance the app was left in. A first run follows the
 	// desktop instead, which is what the button then switches away from.
 	Dark *bool `json:"dark,omitempty"`
-	// View is the last view shown, so the app reopens the way it was left.
-	View int `json:"view"`
+	// Page is the page the app was left on.
+	Page int `json:"page"`
 	// Roots are the directories to scan. Empty means the user's home.
 	Roots []string `json:"roots,omitempty"`
+	// MinSize is the smallest artifact the list shows, in bytes. A first run
+	// starts at defaultMinSize, so a disk with thousands of small caches
+	// opens on a list that can be read.
+	MinSize *int64 `json:"minSize,omitempty"`
 }
 
 // settingsFile is the settings file's name inside the app's per-user data
@@ -50,9 +54,10 @@ func (a *App) saveSettings() {
 		return
 	}
 	data, err := json.Marshal(Settings{
-		Dark:  &a.theme,
-		View:  a.viewIdx,
-		Roots: a.roots,
+		Dark:    &a.theme,
+		Page:    int(a.page),
+		Roots:   a.roots,
+		MinSize: &a.minSize,
 	})
 	if err != nil {
 		return

@@ -28,6 +28,12 @@ func (a *App) setVolumes(volumes []disk.Volume) {
 	a.volumes = volumes
 }
 
+// scansVolume reports whether the scan is looking at a whole volume, so the
+// picker can mark the current one.
+func (a *App) scansVolume(root string) bool {
+	return len(a.roots) == 1 && a.roots[0] == root
+}
+
 // ChooseRoot asks the user for a folder to scan instead of the home
 // directory, which is how the app is pointed at a projects drive.
 func (a *App) ChooseRoot() {
@@ -83,6 +89,13 @@ func (a *App) selection() ([]scan.Artifact, int64) {
 	return chosen, total
 }
 
+// chosenArtifacts is the selection without its total, for the notes that only
+// need to look at what was chosen.
+func (a *App) chosenArtifacts() []scan.Artifact {
+	chosen, _ := a.selection()
+	return chosen
+}
+
 // SelectAll chooses every artifact currently shown.
 func (a *App) SelectAll() {
 	for _, art := range a.shown {
@@ -111,6 +124,7 @@ func (a *App) Clean() {
 	// applied.
 	if err := clean.GuardSet(targets); err != nil {
 		a.status = "Refused: " + err.Error()
+		a.confirm = false
 		return
 	}
 	// The window shows the removal running from this instant, so the
@@ -155,8 +169,8 @@ func (a *App) Reveal(path string) {
 	mygo.Shell.ShowItemInFolder(path)
 }
 
-// revealTarget is the single artifact the list is focused on, which is
-// what Reveal acts on.
+// revealTarget is the single artifact the selection holds, which is what
+// Reveal acts on: the system's file manager can only show one thing.
 func (a *App) revealTarget() (string, bool) {
 	chosen, _ := a.selection()
 	if len(chosen) != 1 {
@@ -164,10 +178,6 @@ func (a *App) revealTarget() (string, bool) {
 	}
 	return chosen[0].Path, true
 }
-
-// groups returns the shown artifacts grouped by kind, which is how the
-// list presents them.
-func (a *App) groups() []scan.Group { return scan.GroupByKind(a.shown) }
 
 // largest returns the biggest artifacts, which is what the map shows: a
 // treemap of ten thousand tiles is a texture, not a map.
@@ -180,9 +190,6 @@ func (a *App) largest(n int) []scan.Artifact {
 	}
 	return arts
 }
-
-// totalShown is the size of everything the list shows.
-func (a *App) totalShown() int64 { return scan.Total(a.shown) }
 
 // summary says what the scan found, in one line.
 func (a *App) summary() string {
@@ -208,7 +215,7 @@ func (a *App) summary() string {
 // claim about freshness.
 func (a *App) age() string {
 	if a.lastScan.IsZero() {
-		return ""
+		return "not yet"
 	}
 	d := time.Since(a.lastScan)
 	switch {
@@ -220,6 +227,10 @@ func (a *App) age() string {
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	}
 }
+
+// timeNow is the clock the view reads, kept in one place so every row of one
+// frame agrees about what "dormant" means.
+func timeNow() time.Time { return time.Now() }
 
 // withCommas writes a count with thousands separators, as a status line
 // reads it.

@@ -1,32 +1,84 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
 
 	"sweep/internal/scan"
 	"sweep/internal/treemap"
 )
 
-// mapTileLimit is how many artifacts the map draws. A treemap of every
-// artifact on a large disk is a texture rather than a map, and the tiles
-// past the largest few hundred are unreadable and unclickable; the list
-// shows all of them.
-const mapTileLimit = 300
+// mapTileLimit is how many projects the map draws at its first zoom level. A
+// partition of every project on a large disk is a texture rather than a map,
+// and the tiles past the largest few dozen are unreadable and unclickable; the
+// list shows all of them.
+const mapTileLimit = 24
 
-// mapHeight is the map's height. A treemap needs area to be legible, and a
-// fixed height keeps the layout stable across scans: the tiles move, the
-// card does not.
-const mapHeight = 380
+// mapHeight is the map's height at its largest. The partition needs area to be
+// legible, but it also has to share one screen with the summary cards and the
+// inspector, so mapHeightFor shrinks it rather than making the page scroll.
+const mapHeight = 400
 
-// tileGap is the space left around each tile, which is what separates
-// neighbours without a border between them.
-const tileGap = 1.5
+// mapMinHeight is the smallest map worth drawing: below it the tiles stop being
+// readable, and scrolling is the better answer.
+const mapMinHeight = 220
 
-// mapCache holds a laid-out treemap and the inputs it was built from, so
-// the layout runs when the data or the box changes rather than on every
-// frame the pointer moves.
+// mapHeightFor is the map's height for this window, which is the room the
+// partition card has left once the page's own furniture is placed.
+//
+// It is only the first frame's estimate. The box then takes the room the card
+// actually gives it (see drawPartition), and mapRoomHeight reports that from
+// the second frame on. The sum below is a guess at the page's chrome, and a
+// guess that drifts is harmless here: it decides one frame, not the layout.
+func mapHeightFor(c *ui.Context) float32 {
+	_, height := c.Size()
+	h := float32(height) - mapPageChrome
+	return clampFloat(h, mapMinHeight, mapHeight)
+}
+
+// mapPageChrome is everything on the map page that is not the partition:
+// the page header and its gap, the three summary cards, the filter rail, the
+// partition's title row and padding, the gaps between the cards, the inspector,
+// the footer bar, and the page's bottom padding.
+const mapPageChrome = 66 + 130 + 40 + 34 + 2*cardPad + 96 + 5*cardGap + 58 + pagePad
+
+// clampFloat bounds v to [lo, hi].
+func clampFloat(v, lo, hi float32) float32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+// mapGap is the space left between tiles, which is what separates neighbours
+// without a border between them.
+const mapGap = 8
+
+// mapMinTile is the smallest tile that can still show a name. A tile below it
+// is a colour, not information, so the layout gives its space to the tiles that
+// can be read.
+const mapMinTile = 62
+
+// mapAspect is the width-to-height ratio the partition is laid out in. A
+// squarified treemap of a wide, short box produces a few very wide tiles and a
+// column of slivers; a ratio close to the card's own shape gives tiles that can
+// all hold a name.
+const mapAspect = 2.6
+
+// mapZoomSteps are the zoom levels the map offers, as how many projects each
+// one shows.
+var mapZoomSteps = []int{mapTileLimit, mapTileLimit * 2, mapTileLimit * 4}
+
+// mapCache holds a laid-out partition and the inputs it was built from, so the
+// layout runs when the data or the box changes rather than on every frame.
 type mapCache struct {
 	tiles []treemap.Tile
 	items []treemap.Item
@@ -34,14 +86,412 @@ type mapCache struct {
 	valid bool
 }
 
-// layout returns the map's tiles for the box, relaying them out only when
-// the artifacts, the box, or the canvas have changed.
+// mapView draws the space map: a partition of the projects that hold build
+// output, each tile sized by what it would reclaim.
+//
+// It is a project view rather than a folder treemap on purpose. The question a
+// full disk asks is "which project is eating it", and a Next.js app's .next and
+// node_modules are one answer, not two.
+//
+// The page does not scroll: the partition fills the room the cards, the rail and
+// the inspector leave, so the map and the project it describes are always on one
+// screen. That is the whole point of a map.
+func (a *App) mapView(c *ui.Context) {
+	if len(a.shown) == 0 {
+		a.summaryCards(c, nil)
+		a.empty(c, "Nothing to map: no build output was found here.")
+		return
+	}
+	projects := a.projects()
+	limit := mapZoomSteps[min(a.mapZoom, len(mapZoomSteps)-1)]
+	shown := projects
+	if len(shown) > limit {
+		shown = shown[:limit]
+	}
+
+	ui.Column(c).FillWidth().FillHeight().Gap(cardGap).Children(func() {
+		a.summaryCards(c, a.shown)
+		a.filterRail(c, a.shown)
+		// The partition takes the room that is left, and the inspector keeps
+		// its own height: a banner clipped by the map would hide the path,
+		// which is the one thing a tile cannot show.
+		a.partitionCard(c, shown, len(projects))
+		a.inspector(c, projects)
+	})
+}
+
+// projects groups the shown artifacts by the folder that holds them, which is
+// what the map draws.
+func (a *App) projects() []scan.Project {
+	return scan.GroupByProject(a.shown)
+}
+
+// partitionCard is the map's card: its title, the zoom controls, and the
+// partition itself.
+func (a *App) partitionCard(c *ui.Context, projects []scan.Project, total int) {
+	t := c.Theme()
+	// The layout runs before the title so the subtitle can report how many
+	// projects it could not label. Computing it after would make the note a
+	// frame behind, and a stale count is worse than none.
+	tiles, hidden := a.partitionTiles(c, projects)
+	ui.Column(c).FillWidth().Grow(1).MinHeight(mapMinHeight).Padding(cardPad).
+		Gap(t.Space(3)).Radius(radiusCard).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(3)).Shrink(0).Children(func() {
+			ui.Box(c).Size(34, 34).Shrink(0).Radius(9).Center().
+				Background(t.Accent.Alpha(0.10)).Children(func() {
+				components.Icon(c, lucide.LayoutGrid()).Size(17, 17).TextColor(t.Accent)
+			})
+			ui.Column(c).Gap(0).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+				components.Text(c, "Interactive space partition").FontSize(13).FontWeight(600).
+					SingleLine().Ellipsis("…")
+				// The subtitle carries the one caveat the map has: tiles too
+				// small to label are not drawn, so a partition of four is not
+				// a disk with four projects.
+				subtitle := "Click a tile to inspect the project, then reclaim it."
+				if hidden > 0 {
+					subtitle = fmt.Sprintf(
+						"%s more too small to label — zoom in, or use the list.",
+						itoa(hidden))
+				}
+				components.Text(c, subtitle).
+					FontSize(11).TextColor(t.TextMuted).SingleLine().Ellipsis("…")
+			})
+			a.zoomControls(c, len(projects), total)
+		})
+		a.drawPartition(c, tiles)
+	})
+}
+
+// zoomControls are the map's three view controls: more projects, fewer, and
+// back to the start. They are real buttons, so the map can be explored without
+// a scroll wheel.
+func (a *App) zoomControls(c *ui.Context, shown, total int) {
+	t := c.Theme()
+	ui.Row(c).Gap(t.Space(1)).Shrink(0).AlignItems(ui.Center).Children(func() {
+		more := a.mapZoom < len(mapZoomSteps)-1
+		fewer := a.mapZoom > 0
+		up := components.IconButton(c, lucide.ZoomIn(), "Show more projects", components.IconButtonPlain)
+		up.Disabled(!more)
+		if up.Clicked() && more {
+			a.mapZoom++
+		}
+		down := components.IconButton(c, lucide.ZoomOut(), "Show fewer projects", components.IconButtonPlain)
+		down.Disabled(!fewer)
+		if down.Clicked() && fewer {
+			a.mapZoom--
+		}
+		if b := components.IconButton(c, lucide.RotateCcw(), "Reset the map", components.IconButtonPlain); b.Clicked() {
+			a.mapZoom, a.mapSelected = 0, ""
+		}
+		_ = t
+	})
+}
+
+// partitionTiles lays the projects out and reports which tiles are too small to
+// label, so the card can say so and the partition can draw the rest.
+//
+// The tiles are absolutely positioned inside a fixed-height box: the layout
+// already knows every rectangle, and a flex row would not let a tile be both
+// wide and tall in the proportions its share of the disk asks for.
+func (a *App) partitionTiles(c *ui.Context, projects []scan.Project) ([]mapTile, int) {
+	items := projectItems(projects)
+	byDir := make(map[string]scan.Project, len(projects))
+	for _, p := range projects {
+		byDir[p.Dir] = p
+	}
+	// The box is the room the card actually gives it, measured last frame,
+	// rather than a height worked out from the window: the partition card
+	// grows into whatever the summary cards and the inspector leave, so a
+	// computed height drifts from it and the tiles draw past the card's
+	// border. The first frame has no measurement yet and uses the estimate.
+	h := a.mapRoomHeight(c)
+	width, _ := c.Size()
+	r := ui.Rect{
+		W: float32(width) - sidebarWidth - 2*pagePad - 2*cardPad - 16,
+		H: h,
+	}
+	if r.W < 320 {
+		r.W = 320
+	}
+	var out []mapTile
+	hidden := 0
+	for _, tile := range a.layout(items, r) {
+		project, ok := byDir[tile.Key]
+		if !ok {
+			continue
+		}
+		w, ht := float32(tile.W)-mapGap, float32(tile.H)-mapGap
+		if w < mapMinTile || ht < mapMinTile {
+			hidden++
+			continue
+		}
+		out = append(out, mapTile{
+			Project: project,
+			Rect: ui.Rect{
+				X: float32(tile.X) + mapGap/2,
+				Y: float32(tile.Y) + mapGap/2,
+				W: w,
+				H: ht,
+			},
+		})
+	}
+	return out, hidden
+}
+
+// mapTile is one laid-out project: what to draw and where.
+type mapTile struct {
+	Project scan.Project
+	Rect    ui.Rect
+}
+
+// drawPartition paints the tiles inside the map's box.
+// drawPartition paints the tiles inside the map's box. The box grows into the
+// room the card has left, and records that height for the next frame's layout,
+// which is what keeps the tiles inside the card instead of drawing past it.
+// Clip is the backstop: the one frame that a resize leaves stale cannot paint
+// outside the box either.
+// drawPartition paints the tiles inside the map's box. The box grows into the
+// room the card has left, and records that height for the next frame's layout,
+// which is what keeps the tiles inside the card instead of drawing past it.
+//
+// The layout runs before the box is measured, so the first frame lays tiles out
+// for an estimate and the box clips them. Asking for one more frame when the
+// measurement differs is what stops that first frame from being the one the
+// user sees: MyGo draws nothing while nothing changes, so the clipped map would
+// otherwise stay on screen.
+func (a *App) drawPartition(c *ui.Context, tiles []mapTile) {
+	box := ui.Box(c).FillWidth().Grow(1).Shrink(1).Clip()
+	box.Children(func() {
+		for _, tile := range tiles {
+			a.tile(c, tile.Project, tile.Rect)
+		}
+	})
+
+	room := box.Bounds().H
+	if d := room - a.mapRoom; room > 0 && (d > 0.5 || d < -0.5) {
+		a.mapRoom = room
+		c.Invalidate()
+	}
+}
+
+// mapRoomHeight is the height the partition box had last frame, or the
+// estimate for the window when there has not been one yet.
+func (a *App) mapRoomHeight(c *ui.Context) float32 {
+	if a.mapRoom > 0 {
+		return a.mapRoom
+	}
+	return mapHeightFor(c)
+}
+
+// tile is one project in the partition: a tinted card with the project's name,
+// what it holds, and its size. The tint is the build system's hue at low
+// strength, because the label carries the meaning and the hue is only the key.
+func (a *App) tile(c *ui.Context, project scan.Project, r ui.Rect) {
+	t := c.Theme()
+	chosen := a.isChosen(project)
+	selected := a.mapSelected == project.Dir
+	hue := KindColor(t.Dark, project.Kind())
+
+	b := ui.ButtonBase(c).Key(project.Dir).Label(project.Name).
+		Absolute().Left(r.X).Top(r.Y).Width(r.W).Height(r.H).
+		Padding(t.Space(2.5)).Radius(radiusCard).Clip().
+		Justify(ui.Start).AlignItems(ui.Stretch).Cursor(ui.CursorPointer)
+	b.Background(hue.Alpha(0.10)).Border(1, hue.Alpha(0.22))
+	switch {
+	case chosen:
+		b.Background(hue.Alpha(0.20)).Border(2, t.Accent)
+	case selected:
+		b.Border(2, t.Accent)
+	case b.Hovered():
+		b.Background(hue.Alpha(0.16)).Border(1, hue.Alpha(0.35))
+	}
+	b.OnClick(func() { a.mapSelected = project.Dir })
+	b.Tooltip(projectTooltip(project))
+	b.Children(func() {
+		ui.Column(c).FillWidth().FillHeight().Gap(t.Space(1)).Children(func() {
+			// The head: a folder mark, the project's name, and its size. A
+			// narrow tile drops the mark and then the size, because the name
+			// is what identifies the project and the tooltip carries the rest.
+			roomy := r.W >= 150
+			ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(t.Space(2)).Children(func() {
+				if roomy {
+					ui.Box(c).Size(30, 30).Shrink(0).Radius(8).Center().
+						Background(hue.Alpha(0.16)).Children(func() {
+						components.Icon(c, projectIcon(project)).Size(15, 15).TextColor(hue)
+					})
+				}
+				ui.Column(c).Gap(0).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+					components.Text(c, project.Name).FontSize(13).FontWeight(600).
+						SingleLine().Ellipsis("…")
+					if r.H >= 90 {
+						components.Text(c, project.Summary()).FontSize(11).TextColor(t.TextMuted).
+							SingleLine().Ellipsis("…")
+					}
+				})
+				if r.W >= 210 {
+					components.Text(c, scan.HumanBytes(project.Bytes)).FontSize(13).
+						FontWeight(600).TextColor(hue).Shrink(0).SingleLine()
+				}
+			})
+			ui.Spacer(c)
+			// The foot only appears where there is room for it: a tile that
+			// clipped its own foot would look broken rather than compact.
+			if r.H < 132 {
+				return
+			}
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(2)).Children(func() {
+				components.Icon(c, lucide.ShieldCheck()).Size(13, 13).Shrink(0).
+					TextColor(t.Success)
+				components.Text(c, projectFoot(project)).FontSize(11).
+					TextColor(t.TextMuted).Grow(1).Shrink(1).MinWidth(0).
+					SingleLine().Ellipsis("…")
+				if r.W >= 210 {
+					components.Text(c, tileAction(chosen)).FontSize(11).FontWeight(600).
+						TextColor(t.Accent).Shrink(0)
+				}
+			})
+		})
+	})
+}
+
+// projectIcon picks the glyph for a project's shape: a package for a
+// dependency tree, an archive for build output, a database for a cache.
+func projectIcon(p scan.Project) *ui.SVG {
+	for _, art := range p.Artifacts {
+		if art.Rule.Cache {
+			return lucide.Database()
+		}
+	}
+	for _, art := range p.Artifacts {
+		switch art.Name {
+		case "node_modules", ".venv", "venv", "Pods":
+			return lucide.Package()
+		}
+	}
+	return lucide.FolderArchive()
+}
+
+// projectFoot says what removing the project costs, which is the one thing a
+// size cannot tell you.
+func projectFoot(p scan.Project) string {
+	switch {
+	case len(p.Artifacts) == 0:
+		return "Safe to purge"
+	case p.Costly():
+		return "Rebuilds next time"
+	default:
+		return "Safe to purge"
+	}
+}
+
+// tileAction is the tile's trailing word: what clicking it will do.
+func tileAction(chosen bool) string {
+	if chosen {
+		return "Selected ✓"
+	}
+	return "Purge"
+}
+
+// isChosen reports whether every artifact of a project is selected, which is
+// what a selected tile means.
+func (a *App) isChosen(p scan.Project) bool {
+	if len(p.Artifacts) == 0 {
+		return false
+	}
+	for _, art := range p.Artifacts {
+		if !a.selected[art.Path] {
+			return false
+		}
+	}
+	return true
+}
+
+// inspector is the banner under the map: the project the last click chose, with
+// its full path and the two actions that can be taken on it.
+//
+// It is always drawn, because the map's tiles are small and the path is the one
+// piece of information a tile cannot show.
+func (a *App) inspector(c *ui.Context, projects []scan.Project) {
+	t := c.Theme()
+	project, ok := scan.FindProject(projects, a.mapSelected)
+	if !ok && len(projects) > 0 {
+		project, ok = projects[0], true
+	}
+	ui.Column(c).FillWidth().Padding(cardPad).Radius(radiusCard).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		if !ok {
+			ui.Row(c).AlignItems(ui.Center).Gap(t.Space(2)).Children(func() {
+				components.Icon(c, lucide.FolderOpen()).Size(16, 16).TextColor(t.TextMuted)
+				components.Text(c, "Click a tile to inspect a project.").
+					FontSize(12).TextColor(t.TextMuted)
+			})
+			return
+		}
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(t.Space(3)).Wrap().Children(func() {
+			ui.Box(c).Size(40, 40).Shrink(0).Radius(10).Center().
+				Background(t.Accent.Alpha(0.10)).Children(func() {
+				components.Icon(c, lucide.FolderOpen()).Size(19, 19).TextColor(t.Accent)
+			})
+			ui.Column(c).Gap(t.Space(1)).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+				ui.Row(c).AlignItems(ui.Center).Gap(t.Space(2)).Wrap().Children(func() {
+					components.Text(c, project.Name).FontSize(14).FontWeight(600).
+						SingleLine().Ellipsis("…").Shrink(1)
+					components.Badge(c, "Safe to clean", components.BadgeOptions{
+						Tone: components.BadgeSuccess,
+						Icon: lucide.ShieldCheck(),
+					})
+					components.Text(c, "Size: "+scan.HumanBytes(project.Bytes)).
+						FontSize(11).TextColor(t.TextMuted).Shrink(0)
+				})
+				components.Text(c, project.Dir).FontSize(11).TextColor(t.TextMuted).
+					SingleLine().Ellipsis("…")
+			})
+			ui.Row(c).Gap(t.Space(2)).Shrink(0).AlignItems(ui.Center).Children(func() {
+				if b := components.Button(c, "Open in Explorer", components.ButtonSecondary); b.Clicked() {
+					a.Reveal(project.Dir)
+				}
+				label := "Reclaim " + scan.HumanBytes(project.Bytes)
+				b := components.Button(c, label, components.ButtonPrimary)
+				b.Tooltip("Choose this project's build output and review it before removing")
+				if b.Clicked() {
+					a.selectProject(project)
+				}
+			})
+		})
+	})
+}
+
+// selectProject chooses a project's artifacts and opens the confirmation, so
+// the map's main action is one press rather than a selection the user then has
+// to finish elsewhere.
+func (a *App) selectProject(p scan.Project) {
+	if len(p.Artifacts) == 0 {
+		return
+	}
+	a.selected = map[string]bool{}
+	for _, path := range p.Paths() {
+		a.selected[path] = true
+	}
+	a.confirm = true
+}
+
+// projectItems turns projects into the map's items, which is what both the
+// layout and the cache key are built from.
+func projectItems(projects []scan.Project) []treemap.Item {
+	items := make([]treemap.Item, 0, len(projects))
+	for _, p := range projects {
+		items = append(items, treemap.Item{Key: p.Dir, Value: p.Bytes, Kind: string(p.Kind())})
+	}
+	return items
+}
+
+// layout returns the partition's tiles for the box, relaying them out only when
+// the projects or the box have changed.
 //
 // This is what keeps the map responsive: the layout is O(n log n) with a
-// squarify pass over up to 300 tiles, and a pointer that merely moves
-// produces frames where nothing about it changed. Both the draw callback
-// and the hit test read this one result, so the tile drawn under the
-// pointer is always the tile the hit test reports.
+// squarify pass over up to a few dozen tiles, and a pointer that merely moves
+// produces frames where nothing about it changed.
 func (a *App) layout(items []treemap.Item, r ui.Rect) []treemap.Tile {
 	if a.mapCache.valid && a.mapCache.rect == r && sameItems(a.mapCache.items, items) {
 		return a.mapCache.tiles
@@ -51,8 +501,8 @@ func (a *App) layout(items []treemap.Item, r ui.Rect) []treemap.Tile {
 	return tiles
 }
 
-// sameItems reports whether two item lists hold the same values in the
-// same order, which is what the layout depends on.
+// sameItems reports whether two item lists hold the same values in the same
+// order, which is what the layout depends on.
 func sameItems(a, b []treemap.Item) bool {
 	if len(a) != len(b) {
 		return false
@@ -65,8 +515,8 @@ func sameItems(a, b []treemap.Item) bool {
 	return true
 }
 
-// tileAt returns the tile under a point in painted coordinates. The tiles
-// do not overlap, so the first hit is the only hit.
+// tileAt returns the tile under a point in painted coordinates. The tiles do
+// not overlap, so the first hit is the only hit.
 func tileAt(tiles []treemap.Tile, x, y float32) (string, bool) {
 	for _, tile := range tiles {
 		if float64(x) >= tile.X && float64(x) < tile.X+tile.W &&
@@ -77,114 +527,12 @@ func tileAt(tiles []treemap.Tile, x, y float32) (string, bool) {
 	return "", false
 }
 
-// mapView draws the treemap: every tile's area is its share of the
-// reclaimable total, and its colour is the build system it belongs to.
-// This is the "where did it all go" answer, which a list of paths cannot
-// give.
-func (a *App) mapView(c *ui.Context) {
-	t := c.Theme()
-	arts := a.largest(mapTileLimit)
-	items := mapItems(arts)
-	byPath := make(map[string]scan.Artifact, len(arts))
-	for _, art := range arts {
-		byPath[art.Path] = art
-	}
-
-	card(c, func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "Space map").FontSize(13).FontWeight(600)
-			ui.Text(c, "·").FontSize(13).TextColor(t.TextMuted)
-			ui.Text(c, "area is size, colour is build system").FontSize(12).TextColor(t.TextMuted)
-			ui.Spacer(c)
-			if len(a.found) > len(arts) {
-				ui.Textf(c, "showing the largest %d of %d", len(arts), len(a.found)).
-					FontSize(12).TextColor(t.TextMuted)
-			}
-		})
-
-		// FillWidth, not Fill: Fill would also stretch the height to the
-		// parent's content box, which here is the card's, collapsing the
-		// explicit height the map is drawn at.
-		box := ui.Box(c).Height(mapHeight).FillWidth().Radius(8).Clip().
-			Background(t.Background).Bind(&a.mapBox)
-		box.Draw(func(p *ui.Painter, r ui.Rect) {
-			tiles := a.layout(items, r)
-			// PointerPosition is relative to this element's box, so it is
-			// turned into painted coordinates before it is compared with
-			// the tiles, which the layout places in those coordinates.
-			px, py, over := box.PointerPosition()
-			hover := ""
-			if over {
-				if key, ok := tileAt(tiles, r.X+px, r.Y+py); ok {
-					hover = key
-				}
-			}
-			for _, tile := range tiles {
-				art := byPath[tile.Key]
-				fill := KindColor(t.Dark, art.Kind)
-				rect := ui.Rect{
-					X: float32(tile.X) + tileGap,
-					Y: float32(tile.Y) + tileGap,
-					W: float32(tile.W) - 2*tileGap,
-					H: float32(tile.H) - 2*tileGap,
-				}
-				if rect.W <= 0 || rect.H <= 0 {
-					continue
-				}
-				p.Fill(rect, fill, 4)
-				switch {
-				case a.selected[art.Path]:
-					// A chosen tile keeps its colour and takes a ring, so
-					// the selection reads as a state of the same tile
-					// rather than as a different kind.
-					p.Stroke(rect, t.Text, 4, 2.5)
-				case tile.Key == hover:
-					p.Stroke(rect, onColor(fill), 4, 2)
-				}
-				// A label only where it fits and can be read: text in a
-				// 12-pixel tile is noise, not information.
-				if rect.W > 52 && rect.H > 26 {
-					label := artifactLabel(art)
-					if w, h := p.MeasureText(0, ui.Span{Text: label, Weight: 600, Size: 12}); w < rect.W-10 && h < rect.H-8 {
-						p.RichText(rect.X+6, rect.Y+5, 0, ui.Span{
-							Text: label, Weight: 600, Size: 12, Color: onColor(fill),
-						})
-						if rect.H > 44 {
-							p.RichText(rect.X+6, rect.Y+21, 0, ui.Span{
-								Text: scan.HumanBytes(art.Bytes), Size: 11,
-								Color: onColor(fill).Alpha(0.85),
-							})
-						}
-					}
-				}
-			}
-		})
-		// The tooltip and the click are resolved from the same cached
-		// layout the draw callback used, so what the tooltip names is what
-		// is under the pointer.
-		px, py, over := box.PointerPosition()
-		if path, ok := a.hoveredTileAt(items, a.mapBox.Bounds(c), px, py, over); ok {
-			box.Tooltip(tileTooltip(byPath[path]))
-			if box.Clicked() {
-				a.Toggle(path)
-			}
-		}
-		ui.Row(c).AlignItems(ui.Center).Gap(10).Children(func() {
-			a.legend(c, a.kindsPresent())
-			ui.Spacer(c)
-			ui.Text(c, "Click a tile to choose it").
-				FontSize(12).TextColor(t.TextMuted).Shrink(0)
-		})
-	})
-}
-
-// hoveredTileAt returns the artifact under a pointer, given the map's
-// committed box and the pointer's position in the element's own
-// coordinates, which is what PointerPosition reports.
+// hoveredTileAt returns the tile under a pointer, given the map's committed box
+// and the pointer's position in the element's own coordinates.
 //
-// The two spaces differ by the box's own origin, and getting that wrong
-// shifts the hit test by exactly that much: the bug this signature exists
-// to make testable named the tile above the one under the pointer.
+// The two spaces differ by the box's own origin, and getting that wrong shifts
+// the hit test by exactly that much: the bug this signature exists to make
+// testable named the tile above the one under the pointer.
 func (a *App) hoveredTileAt(items []treemap.Item, r ui.Rect, x, y float32, over bool) (string, bool) {
 	if !over || r.W <= 0 || r.H <= 0 {
 		return "", false
@@ -192,95 +540,18 @@ func (a *App) hoveredTileAt(items []treemap.Item, r ui.Rect, x, y float32, over 
 	return tileAt(a.layout(items, r), r.X+x, r.Y+y)
 }
 
-// mapItems turns artifacts into the map's items, which is what both the
-// layout and the cache key are built from.
-func mapItems(arts []scan.Artifact) []treemap.Item {
-	items := make([]treemap.Item, 0, len(arts))
-	for _, art := range arts {
-		items = append(items, treemap.Item{
-			Key:   art.Path,
-			Value: art.Bytes,
-			Kind:  string(art.Kind),
-		})
+// projectTooltip describes a project in a sentence, so a hover answers "what is
+// this and is it safe" without leaving the map.
+func projectTooltip(p scan.Project) string {
+	parts := []string{p.Dir, scan.HumanBytes(p.Bytes)}
+	if p.Files > 0 {
+		parts = append(parts, plural(p.Files, "file", "files"))
 	}
-	return items
-}
-
-// tileTooltip describes one artifact in a sentence, so a hover answers
-// "what is this and is it safe" without leaving the map.
-func tileTooltip(a scan.Artifact) string {
-	parts := []string{a.Path, scan.HumanBytes(a.Bytes)}
-	if a.Files > 0 {
-		parts = append(parts, plural(a.Files, "file", "files"))
-	}
-	if a.Rule.Note != "" {
-		parts = append(parts, a.Rule.Note)
-	}
-	if when := timeLabel(a.Touched); when != "" {
-		parts = append(parts, "Last changed "+when)
+	for _, art := range p.Artifacts {
+		if art.Rule.Note != "" {
+			parts = append(parts, art.Rule.Note)
+			break
+		}
 	}
 	return strings.Join(parts, "\n")
-}
-
-// plural writes a count with its noun.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return itoa(n) + " " + many
-}
-
-// legend is the map's key: one chip per kind present, so the colours are
-// named rather than guessed.
-func (a *App) legend(c *ui.Context, kinds []scan.Kind) {
-	t := c.Theme()
-	ui.Row(c).Gap(12).Wrap().Children(func() {
-		for _, k := range kinds {
-			ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(9, 9).Radius(2).Background(KindColor(t.Dark, k))
-				ui.Text(c, string(k)).FontSize(12).TextColor(t.TextMuted)
-			})
-		}
-	})
-}
-
-// kindsPresent lists the kinds the map is showing, in the app's kind
-// order, which is the order the list groups them in: the same build system
-// then sits in the same relative place in both views, and the legend does
-// not shuffle between scans.
-func (a *App) kindsPresent() []scan.Kind {
-	seen := map[scan.Kind]bool{}
-	for _, art := range a.shown {
-		seen[art.Kind] = true
-	}
-	var out []scan.Kind
-	for _, k := range scan.Kinds {
-		if seen[k] {
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
-// itoa writes an int without pulling in strconv for one call site.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }
