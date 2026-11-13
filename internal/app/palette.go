@@ -11,6 +11,11 @@ import (
 // kindColors is the map's categorical palette: one hue per build system,
 // so a treemap reads as "where the space went" before any label is read.
 //
+// The hues stay warm and neutral, apart from two, so that nothing in the map
+// competes with the blue accent: an orange, an amber, a crimson, a plum, a
+// cocoa, a slate and a grey. Green and cyan are left out on purpose, because
+// the accent is the only cool colour the window spends on meaning.
+//
 // The hues are mid-tone on purpose. A tile is filled solid and labelled on
 // top, so the label colour has to be chosen per fill rather than fixed; a
 // mid-tone keeps that choice from being marginal for any of them, and the
@@ -18,23 +23,23 @@ import (
 var kindColors = map[bool]map[scan.Kind]ui.Color{
 	false: { // light
 		scan.Rust:   ui.Hex("#B4551F"),
-		scan.Node:   ui.Hex("#3D7D40"),
-		scan.Python: ui.Hex("#3A6A9C"),
-		scan.JVM:    ui.Hex("#744D91"),
-		scan.Xcode:  ui.Hex("#3B768C"),
+		scan.Node:   ui.Hex("#8C6A16"),
+		scan.Python: ui.Hex("#A33B4A"),
+		scan.JVM:    ui.Hex("#7A4A7E"),
+		scan.Xcode:  ui.Hex("#6F5B3E"),
 		scan.CMake:  ui.Hex("#4C5661"),
-		scan.DotNet: ui.Hex("#8E4C72"),
-		scan.Other:  ui.Hex("#6E675C"),
+		scan.DotNet: ui.Hex("#8A4768"),
+		scan.Other:  ui.Hex("#6E7480"),
 	},
 	true: { // dark
 		scan.Rust:   ui.Hex("#D2762F"),
-		scan.Node:   ui.Hex("#5FA463"),
-		scan.Python: ui.Hex("#5C90C7"),
-		scan.JVM:    ui.Hex("#9B72B8"),
-		scan.Xcode:  ui.Hex("#5AA0B8"),
+		scan.Node:   ui.Hex("#CFA642"),
+		scan.Python: ui.Hex("#C46D7C"),
+		scan.JVM:    ui.Hex("#A786C0"),
+		scan.Xcode:  ui.Hex("#B99A6E"),
 		scan.CMake:  ui.Hex("#7C8899"),
 		scan.DotNet: ui.Hex("#B8789E"),
-		scan.Other:  ui.Hex("#9C9484"),
+		scan.Other:  ui.Hex("#9AA0A8"),
 	},
 }
 

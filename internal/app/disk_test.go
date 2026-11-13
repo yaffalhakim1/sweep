@@ -9,28 +9,29 @@ import (
 	"sweep/internal/disk"
 )
 
-// TestDiskPickerIsInTheHeader checks the control exists beside Rescan, and
-// that the header names where the scan is looking.
-func TestDiskPickerIsInTheHeader(t *testing.T) {
+// TestDriveCardIsInThePage checks the control exists and that the page names
+// where the scan is looking.
+func TestDriveCardIsInThePage(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()
 	a.updateRoot()
-	tt := ui.NewTester(a.viewFn, 980, 720)
+	tt := ui.NewTester(a.viewFn, 1180, 800)
+	tt.Frame()
 
-	if !tt.HasText("Scan") {
-		t.Errorf("no scan-target button; texts: %v", tt.Texts())
+	if !tt.HasText("Active drive") {
+		t.Errorf("no drive card; texts: %v", tt.Texts())
 	}
-	if !tt.HasText("Rescan") {
-		t.Errorf("no rescan button; texts: %v", tt.Texts())
+	if !tt.HasText("Choose a drive or folder to scan") {
+		t.Errorf("the drive card is not a picker; texts: %v", tt.Texts())
 	}
-	if !tt.HasText(a.rootLabel()) {
-		t.Errorf("the header does not name the target %q; texts: %v", a.rootLabel(), tt.Texts())
+	if !tt.HasText(a.diskLabel()) {
+		t.Errorf("the page does not name %q; texts: %v", a.diskLabel(), tt.Texts())
 	}
 }
 
-// TestChoosingAVolumeRenamesTheHeader is the point of the feature: pick
-// another disk, and the name beside the title changes with it.
-func TestChoosingAVolumeRenamesTheHeader(t *testing.T) {
+// TestChoosingAVolumeRenamesTheTarget is the point of the feature: pick
+// another disk, and the name on the page changes with it.
+func TestChoosingAVolumeRenamesTheTarget(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()
 	a.updateRoot()
@@ -55,10 +56,10 @@ func TestChoosingAVolumeRenamesTheHeader(t *testing.T) {
 	after := a.rootLabel()
 
 	if after == before {
-		t.Errorf("choosing %s left the header as %q", target, after)
+		t.Errorf("choosing %s left the target as %q", target, after)
 	}
 	if after != a.nameFor(target) {
-		t.Errorf("header %q, want the volume's own name %q", after, a.nameFor(target))
+		t.Errorf("target %q, want the volume's own name %q", after, a.nameFor(target))
 	}
 	if !a.scansVolume(target) {
 		t.Errorf("the app is not scanning %s after choosing it", target)
@@ -84,8 +85,8 @@ func TestVolumeNameIsFriendly(t *testing.T) {
 	}
 }
 
-// TestFolderRootKeepsItsPath checks that a folder target is named by its
-// path, since the path is what tells two project folders apart.
+// TestFolderRootKeepsItsPath checks that a folder target is named by its path,
+// since the path is what tells two project folders apart.
 func TestFolderRootKeepsItsPath(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "projects")
@@ -96,9 +97,8 @@ func TestFolderRootKeepsItsPath(t *testing.T) {
 	}
 }
 
-// TestChoosingADiskThroughTheMenu drives the real menu rather than calling
-// the action: a picker that works only when called directly is not a
-// picker. The Tester opens the menu the button opens and chooses from it.
+// TestChoosingADiskThroughTheMenu drives the real menu rather than calling the
+// action: a picker that works only when called directly is not a picker.
 func TestChoosingADiskThroughTheMenu(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()
@@ -117,13 +117,14 @@ func TestChoosingADiskThroughTheMenu(t *testing.T) {
 		t.Skip("only one volume")
 	}
 
-	tt := ui.NewTester(a.viewFn, 1000, 720)
-	if err := tt.Click("Scan"); err != nil {
-		t.Fatalf("the scan-target button is not clickable: %v", err)
+	tt := ui.NewTester(a.viewFn, 1180, 800)
+	tt.Frame()
+	if err := tt.Click("Choose a drive or folder to scan"); err != nil {
+		t.Fatalf("the drive card is not clickable: %v", err)
 	}
 	items := tt.Menu()
 	if len(items) == 0 {
-		t.Fatal("the button opened no menu")
+		t.Fatal("the card opened no menu")
 	}
 	t.Logf("menu items: %v", items)
 
@@ -146,13 +147,13 @@ func TestChoosingADiskThroughTheMenu(t *testing.T) {
 		t.Errorf("choosing %q did not make the app scan it; roots=%v", want, a.roots)
 	}
 	if got := a.rootLabel(); got != want {
-		t.Errorf("header shows %q after choosing %q", got, want)
+		t.Errorf("the page shows %q after choosing %q", got, want)
 	}
 }
 
 // TestVolumeListDoesNotTouchTheFilesystemPerFrame checks the picker is fed
-// from the cached list: naming a volume is a syscall, and the header is
-// built every frame.
+// from the cached list: naming a volume is a syscall, and the page is built
+// every frame.
 func TestVolumeListDoesNotTouchTheFilesystemPerFrame(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()
@@ -166,10 +167,10 @@ func TestVolumeListDoesNotTouchTheFilesystemPerFrame(t *testing.T) {
 	}
 }
 
-// TestCapacityCardNamesTheVolume checks the meter's title is the volume's
-// name, not its bare root: VolumeFor reports capacity only, so this is the
-// one place the label has to come from the cached list.
-func TestCapacityCardNamesTheVolume(t *testing.T) {
+// TestDriveCardNamesTheVolume checks the card's title is the volume's name,
+// not its bare root: VolumeFor reports capacity only, so this is the one place
+// the label has to come from the cached list.
+func TestDriveCardNamesTheVolume(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()
 	if len(a.volumes) == 0 {
@@ -182,18 +183,18 @@ func TestCapacityCardNamesTheVolume(t *testing.T) {
 		t.Fatal("no capacity after choosing a volume")
 	}
 	if a.volume.Label != v.Friendly() {
-		t.Errorf("capacity card says %q, want %q", a.volume.Label, v.Friendly())
+		t.Errorf("the capacity card says %q, want %q", a.volume.Label, v.Friendly())
 	}
 	if a.rootLabel() != v.Friendly() {
-		t.Errorf("header says %q, want %q", a.rootLabel(), v.Friendly())
+		t.Errorf("the target says %q, want %q", a.rootLabel(), v.Friendly())
 	}
 }
 
-// TestPickerReReadsDrivesWhenItOpens is the point of refreshing on open:
-// the list held in memory is emptied, the menu is opened, and the drives
-// must come back. If the menu only read the cached list, a disk plugged in
-// after launch would never appear — and the other disk is usually exactly
-// the one that was not there yet.
+// TestPickerReReadsDrivesWhenItOpens is the point of refreshing on open: the
+// list held in memory is emptied, the menu is opened, and the drives must come
+// back. If the menu only read the cached list, a disk plugged in after launch
+// would never appear — and the other disk is usually exactly the one that was
+// not there yet.
 func TestPickerReReadsDrivesWhenItOpens(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()
@@ -205,9 +206,10 @@ func TestPickerReReadsDrivesWhenItOpens(t *testing.T) {
 	// Forget what was read at startup.
 	a.volumes = nil
 
-	tt := ui.NewTester(a.viewFn, 1000, 720)
-	if err := tt.Click("Scan"); err != nil {
-		t.Fatalf("the scan-target button is not clickable: %v", err)
+	tt := ui.NewTester(a.viewFn, 1180, 800)
+	tt.Frame()
+	if err := tt.Click("Choose a drive or folder to scan"); err != nil {
+		t.Fatalf("the drive card is not clickable: %v", err)
 	}
 	items := tt.Menu()
 	if len(items) == 0 {
@@ -230,8 +232,8 @@ func TestPickerReReadsDrivesWhenItOpens(t *testing.T) {
 	}
 }
 
-// TestAnEmptyReadKeepsThePicker checks the guard: a failed enumeration must
-// not empty the picker and take the current target's name with it.
+// TestAnEmptyReadKeepsThePicker checks the guard: a failed enumeration must not
+// empty the picker and take the current target's name with it.
 func TestAnEmptyReadKeepsThePicker(t *testing.T) {
 	a := New(Settings{})
 	a.LoadVolumes()

@@ -70,8 +70,18 @@ func realWorld() []scan.Artifact {
 			Bytes:   r.bytes,
 			Files:   r.files,
 			Touched: now.Add(-time.Duration(i+1) * 9 * time.Hour),
-			Rule:    scan.Rule{Costly: true, Note: "Build output."},
+			Rule:    scan.Rule{Costly: true, Cache: cacheName(r.name), Note: "Build output."},
 		})
 	}
 	return arts
+}
+
+// cacheName reports whether a leaf name in the fixture is a cache rather than
+// build output, so the cache page has something real to show.
+func cacheName(name string) bool {
+	switch name {
+	case "__pycache__", ".mypy_cache", ".pytest_cache", ".turbo", ".vite", ".gradle":
+		return true
+	}
+	return false
 }
